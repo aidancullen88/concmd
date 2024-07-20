@@ -2,7 +2,7 @@ mod actions;
 mod conf_api;
 
 use core::panic;
-use serde::Deserialize;
+use serde::{de::Error, Deserialize, Deserializer};
 use std::fs::File;
 use std::{io::Read, path::PathBuf};
 use toml;
@@ -46,6 +46,7 @@ enum Action {
 
 #[derive(Deserialize, Debug)]
 struct Config {
+    #[serde(deserialize_with = "from_tilde_path")]
     save_location: PathBuf,
     key: Key,
 }
@@ -57,8 +58,15 @@ struct Key {
     token: String,
 }
 
+fn from_tilde_path<'de, D>(deserializer: D) -> Result<PathBuf, D::Error> where D: Deserializer<'de> {
+    let s: String = Deserialize::deserialize(deserializer)?;
+    expanduser::expanduser(s).map_err(D::Error::custom)
+}
+
 fn main() {
-    let mut file = match File::open("/home/aidan/.config/concmd/config.toml") {
+    let mut home_dir = home::home_dir().expect("home dir should always exist");
+    home_dir.push(".config/concmd/config.toml");
+    let mut file = match File::open(home_dir) {
         Ok(file) => file,
         Err(err) => {
             panic!("{}", err)

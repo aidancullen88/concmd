@@ -32,6 +32,10 @@ pub fn edit_page_by_id(config: &Config, id: &String) {
 
 // Worker functions
 
+// pub fn convert_path_to_pathbuf(location: &String) -> Result<PathBuf> {
+//     Ok(expanduser::expanduser(location.clone())?)
+// }
+
 fn save_page_to_file(location: &PathBuf, id: &String, body: &String) -> Result<PathBuf> {
     let mut file_path = location.clone();
     file_path.push(id);
