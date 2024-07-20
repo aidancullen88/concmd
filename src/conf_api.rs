@@ -12,6 +12,7 @@ pub struct Page {
     body: PageBody,
 }
 
+// easier to do it like this rather than have everything public
 impl Page {
     pub fn get_body(&self) -> &String {
         return &self.body.editor.value;
@@ -85,6 +86,10 @@ pub fn update_page_by_id(
     version: usize,
     body: String,
 ) -> Result<()> {
+    // version should be 1 higher than the last time we pulled the page
+    // this will break if anything else updates the page while editing
+    // if this is common (shouldn't be) then will need to re-fetch page info
+    // before pushing
     let upload_body = PageUpdate::new(id.clone(), title, version + 1, body);
     let serialised_body = serde_json::to_string(&upload_body)?;
 

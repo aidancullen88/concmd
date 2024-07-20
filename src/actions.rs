@@ -18,6 +18,7 @@ pub fn publish_page(_space: &String, _page: &String, _filename: &PathBuf) {
     todo!()
 }
 
+// full workflow for page edit: pulls page, opens nvim, pushes page
 pub fn edit_page_by_id(config: &Config, id: &String) {
     let page = conf_api::get_page_by_id(&config.key, id).unwrap();
     let file_path = save_page_to_file(&config.save_location, id, page.get_body()).unwrap();
@@ -41,6 +42,8 @@ fn save_page_to_file(location: &PathBuf, id: &String, body: &String) -> Result<P
     file_path.push(id);
     file_path.set_extension("html");
     let mut file = File::create(&file_path)?;
+    // " are downloaded as &quot; from confluence: replace for easy reading
+    // serialising to JSON when publishing handles putting them back
     let body_unescaped = str::replace(body, "&quot;", "\"");
     file.write_all(body_unescaped.as_bytes())?;
     Ok(file_path)

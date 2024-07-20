@@ -9,6 +9,7 @@ use toml;
 
 use clap::Parser;
 
+// Command line interface for clap
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -44,6 +45,7 @@ enum Action {
     },
 }
 
+// Config structure. Note deserialize_with for save_location, see fn
 #[derive(Deserialize, Debug)]
 struct Config {
     #[serde(deserialize_with = "from_tilde_path")]
@@ -58,7 +60,12 @@ struct Key {
     token: String,
 }
 
-fn from_tilde_path<'de, D>(deserializer: D) -> Result<PathBuf, D::Error> where D: Deserializer<'de> {
+// Implements a custom deserializer for save_location that automatically
+// expands the tilde to the users home directory (unix only)
+fn from_tilde_path<'de, D>(deserializer: D) -> Result<PathBuf, D::Error>
+where
+    D: Deserializer<'de>,
+{
     let s: String = Deserialize::deserialize(deserializer)?;
     expanduser::expanduser(s).map_err(D::Error::custom)
 }
