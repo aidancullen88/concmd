@@ -15,13 +15,13 @@ pub struct Page {
 // easier to do it like this rather than have everything public
 impl Page {
     pub fn get_body(&self) -> &String {
-        return &self.body.editor.value;
+        return &self.body.storage.value;
     }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 struct PageBody {
-    editor: Storage,
+    storage: Storage,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -69,7 +69,7 @@ pub fn get_page_by_id(key: &Key, id: &String) -> anyhow::Result<Page> {
     let client = blocking::Client::new();
     let resp = client
         .get(format!(
-            "https://{}/wiki/api/v2/pages/{}?body-format=editor",
+            "https://{}/wiki/api/v2/pages/{}?body-format=storage",
             key.confluence_domain, id
         ))
         .basic_auth(&key.username, Some(&key.token))
