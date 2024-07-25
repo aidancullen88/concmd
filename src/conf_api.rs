@@ -1,6 +1,7 @@
 use anyhow::Result;
 use reqwest::blocking;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 use crate::Key;
 
@@ -13,8 +14,8 @@ pub struct Page {
     body: PageBody,
 }
 
-// easier to do it like this rather than have everything public
 impl Page {
+    // easier to do it like this rather than have everything public
     pub fn get_body(&self) -> &String {
         return &self.body.editor.value;
     }
@@ -33,8 +34,10 @@ impl Page {
     }
 
     pub fn update_page_by_id(self, key: &key) -> Result<()> {
-        self.version.number += 1;
-        // do the rest of update
+        self.version.number += 1;  // don't think this works like this
+        let serialised_body = serde_json::to_string(&self)?;
+
+        
     }
     
 }
@@ -114,4 +117,27 @@ pub fn update_page_by_id(
         println!("Page publishing failed: {:#?}", resp.text()?)
     }
     Ok(())
+}
+
+enum RequestType {
+    GET,
+    PUT,
+}
+
+impl fmt::Display for RequestType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            RequestType::GET => write!(f, "GET"),
+            RequestType::PUT => write!(f, "PUT"),
+        }
+    }
+}
+
+fn send_put_request(key: &key, method: RequestType, url: &str, body: &String) -> Result<blocking::Response> {
+    let client = blocking::Client::new();
+    let generic_client = match method {
+        RequestType::GET => client.get(url),
+        RequestType::PUT => client.put(url),
+    };
+    // do rest of request chained
 }
