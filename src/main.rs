@@ -59,8 +59,7 @@ impl Config {
         let mut contents = String::new();
         let file = File::open(&file_name).context("Config file could not be found")?;
         file.read_to_string(&mut contents).context("File is not readable")?;
-        let config : Config = toml::from_str(contents.as_str()).context("The config file could not be parsed: check the formatting")?;
-        Ok(config)
+        toml::from_str::<Config>(contents.as_str()).context("The config file could not be parsed: check the formatting")
     }
 }
 
@@ -85,7 +84,7 @@ fn main() {
     let mut home_dir = home::home_dir().expect("home dir should always exist");
     home_dir.push(".config/concmd/config.toml");
 
-    let config = Config::read_config(&home_dir);
+    let config = Config::read_config(&home_dir)?;
 
     let cli = Args::parse();
 
