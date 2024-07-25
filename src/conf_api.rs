@@ -8,6 +8,7 @@ use crate::Key;
 pub struct Page {
     pub id: String,
     pub title: String,
+    status: &'static str, 
     pub version: PageVersion,
     body: PageBody,
 }
@@ -17,7 +18,32 @@ impl Page {
     pub fn get_body(&self) -> &String {
         return &self.body.editor.value;
     }
+
+    pub fn get_page_by_id(key: &Key, id: &String) -> anyhow::Result<Page> {
+    let client = blocking::Client::new();
+    let resp = client
+        .get(format!(
+            "https://{}/wiki/api/v2/pages/{}?body-format=editor",
+            key.confluence_domain, id
+        ))
+        .basic_auth(&key.username, Some(&key.token))
+        .send()?
+        .text()?;
+    serde_json::from_str::<Page>(resp.as_str())
+    }
+
+    pub fn update_page_by_id(self, key: &key) -> Result<()> {
+        self.version.number += 1;
+        // do the rest of update
+    }
+    
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)]
+enum Body {
+    Download(PageBody),
+    Upload(Storage),
 
 #[derive(Serialize, Deserialize, Debug)]
 struct PageBody {
@@ -34,15 +60,6 @@ pub struct PageVersion {
 struct Storage {
     value: String,
     representation: String,
-}
-
-#[derive(Serialize, Debug)]
-pub struct PageUpdate {
-    pub id: String,
-    pub title: String,
-    pub status: &'static str,
-    version: PageVersion,
-    body: Storage,
 }
 
 impl PageUpdate {
@@ -65,19 +82,7 @@ impl PageUpdate {
     }
 }
 
-pub fn get_page_by_id(key: &Key, id: &String) -> anyhow::Result<Page> {
-    let client = blocking::Client::new();
-    let resp = client
-        .get(format!(
-            "https://{}/wiki/api/v2/pages/{}?body-format=editor",
-            key.confluence_domain, id
-        ))
-        .basic_auth(&key.username, Some(&key.token))
-        .send()?
-        .text()?;
-    let parsed_resp: Page = serde_json::from_str(resp.as_str())?;
-    Ok(parsed_resp)
-}
+
 
 pub fn update_page_by_id(
     key: &Key,
