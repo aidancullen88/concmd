@@ -1,6 +1,7 @@
 use anyhow::Result;
 use reqwest::blocking;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 use crate::Key;
 
@@ -8,16 +9,44 @@ use crate::Key;
 pub struct Page {
     pub id: String,
     pub title: String,
+    status: &'static str, 
     pub version: PageVersion,
     body: PageBody,
 }
 
-// easier to do it like this rather than have everything public
 impl Page {
+    // easier to do it like this rather than have everything public
     pub fn get_body(&self) -> &String {
         return &self.body.storage.value;
     }
+
+    pub fn get_page_by_id(key: &Key, id: &String) -> anyhow::Result<Page> {
+    let client = blocking::Client::new();
+    let resp = client
+        .get(format!(
+            "https://{}/wiki/api/v2/pages/{}?body-format=editor",
+            key.confluence_domain, id
+        ))
+        .basic_auth(&key.username, Some(&key.token))
+        .send()?
+        .text()?;
+    serde_json::from_str::<Page>(resp.as_str())
+    }
+
+    pub fn update_page_by_id(self, key: &key) -> Result<()> {
+        self.version.number += 1;  // don't think this works like this
+        let serialised_body = serde_json::to_string(&self)?;
+
+        
+    }
+    
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)]
+enum Body {
+    Download(PageBody),
+    Upload(Storage),
 
 #[derive(Serialize, Deserialize, Debug)]
 struct PageBody {
@@ -34,15 +63,6 @@ pub struct PageVersion {
 struct Storage {
     value: String,
     representation: String,
-}
-
-#[derive(Serialize, Debug)]
-pub struct PageUpdate {
-    pub id: String,
-    pub title: String,
-    pub status: &'static str,
-    version: PageVersion,
-    body: Storage,
 }
 
 impl PageUpdate {
@@ -65,19 +85,6 @@ impl PageUpdate {
     }
 }
 
-pub fn get_page_by_id(key: &Key, id: &String) -> anyhow::Result<Page> {
-    let client = blocking::Client::new();
-    let resp = client
-        .get(format!(
-            "https://{}/wiki/api/v2/pages/{}?body-format=storage",
-            key.confluence_domain, id
-        ))
-        .basic_auth(&key.username, Some(&key.token))
-        .send()?
-        .text()?;
-    let parsed_resp: Page = serde_json::from_str(resp.as_str())?;
-    Ok(parsed_resp)
-}
 
 pub fn update_page_by_id(
     key: &Key,
@@ -109,4 +116,27 @@ pub fn update_page_by_id(
         println!("Page publishing failed: {:#?}", resp.text()?)
     }
     Ok(())
+}
+
+enum RequestType {
+    GET,
+    PUT,
+}
+
+impl fmt::Display for RequestType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            RequestType::GET => write!(f, "GET"),
+            RequestType::PUT => write!(f, "PUT"),
+        }
+    }
+}
+
+fn send_put_request(key: &key, method: RequestType, url: &str, body: &String) -> Result<blocking::Response> {
+    let client = blocking::Client::new();
+    let generic_client = match method {
+        RequestType::GET => client.get(url),
+        RequestType::PUT => client.put(url),
+    };
+    // do rest of request chained
 }

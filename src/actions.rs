@@ -22,10 +22,11 @@ pub fn publish_page(_space: &String, _page: &String, _filename: &PathBuf) {
 
 // full workflow for page edit: pulls page, opens nvim, pushes page
 pub fn edit_page_by_id(config: &Config, id: &String) {
-    let page = conf_api::get_page_by_id(&config.key, id).unwrap();
-    let file_path = save_page_to_file(&config.save_location, id, page.get_body()).unwrap();
+    let mut page = conf_api::get_page_by_id(&config.key, id).unwrap();
+    let file_path = save_page_to_file(&config.save_location, id, page.get_body()).unwrap(); // figure out errors here
     open_editor(&file_path);
     print!("Do you wish to publish this page: y/n?  ");
+
     let user_input: String = text_io::read!("{}\n");
     match user_input.as_str() {
         "y" | "Y" | "yes" | "Yes" => upload_page_by_id(&config.key, page, &file_path).unwrap(),
