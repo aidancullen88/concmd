@@ -17,7 +17,7 @@ pub struct Page {
 impl Page {
     // easier to do it like this rather than have everything public
     pub fn get_body(&self) -> &String {
-        return &self.body.editor.value;
+        return &self.body.storage.value;
     }
 
     pub fn get_page_by_id(key: &Key, id: &String) -> anyhow::Result<Page> {
@@ -50,7 +50,7 @@ enum Body {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct PageBody {
-    editor: Storage,
+    storage: Storage,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -84,7 +84,6 @@ impl PageUpdate {
         }
     }
 }
-
 
 
 pub fn update_page_by_id(

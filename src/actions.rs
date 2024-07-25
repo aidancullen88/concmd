@@ -3,6 +3,8 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::Command;
+use regex::Regex;
+use std::borrow::Cow;
 
 use crate::conf_api;
 use crate::Config;
@@ -45,9 +47,24 @@ fn save_page_to_file(location: &PathBuf, id: &String, body: &String) -> Result<P
     let mut file = File::create(&file_path)?;
     // " are downloaded as &quot; from confluence: replace for easy reading
     // serialising to JSON when publishing handles putting them back
-    let body_unescaped = str::replace(body, "&quot;", "\"");
-    file.write_all(body_unescaped.as_bytes())?;
+    let body_unescaped = unescape_chars(body);
+    let body_table_replaced = remove_complex_table(&body_unescaped);
+    file.write_all(body_table_replaced.as_bytes())?;
     Ok(file_path)
+}
+
+fn remove_complex_table(body: &str) -> Cow<str> {
+    let table_regex = Regex::new(r"<table[^>]*>").expect("regex should always complile");
+    table_regex.replace_all(body, "<table>")
+}
+
+fn unescape_chars(body: &str) -> String {
+    body.replace("&quot;", "\"").replace("&rsquo;", "'").replace("&lsquo;", "'").replace("&rdquo;", "\"").replace("&ldquo;", "\"")
+
+}
+
+fn reescape_chars(body: &String) -> String {
+    body.replace("\"", "&quot;").replace("'", "&rsquo;").replace("'", "&lsquo;").replace("\"", "&rdquo;").replace("\"", "&ldquo;")
 }
 
 fn open_editor(path: &PathBuf) {
@@ -61,8 +78,9 @@ fn open_editor(path: &PathBuf) {
 
 fn upload_page_by_id(key: &Key, page: conf_api::Page, file_path: &PathBuf) -> Result<()> {
     let mut file = File::open(file_path)?;
-    let mut body = String::new();
-    file.read_to_string(&mut body)?;
+    let mut unescaped_body = String::new();
+    file.read_to_string(&mut unescaped_body)?;
+    let body = reescape_chars(&unescaped_body);
     // Process here if needed
     conf_api::update_page_by_id(key, page.id, page.title, page.version.number, body)?;
     Ok(())
