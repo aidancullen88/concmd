@@ -1,11 +1,14 @@
 mod actions;
 mod conf_api;
 
+use anyhow::{Context, Result};
 use serde::{de::Error, Deserialize, Deserializer};
 use std::fs::File;
-use std::{io::Read, path::{Path, PathBuf}};
+use std::{
+    io::Read,
+    path::{Path, PathBuf},
+};
 use toml;
-use anyhow::{Result, Context};
 
 use clap::Parser;
 
@@ -57,8 +60,10 @@ impl Config {
     fn read_config<P: AsRef<Path>>(file_name: &P) -> Result<Config> {
         let mut contents = String::new();
         let mut file = File::open(&file_name).context("Config file could not be found")?;
-        file.read_to_string(&mut contents).context("File is not readable")?;
-        toml::from_str::<Config>(contents.as_str()).context("The config file could not be parsed: check the formatting")
+        file.read_to_string(&mut contents)
+            .context("File is not readable")?;
+        toml::from_str::<Config>(contents.as_str())
+            .context("The config file could not be parsed: check the formatting")
     }
 }
 
