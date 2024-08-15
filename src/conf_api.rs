@@ -15,7 +15,10 @@ pub struct Page {
 }
 
 impl Page {
-    // easier to do it like this rather than have everything public
+    // Getter and setter for body to allow for download and upload in the same struct.
+    // Confluence expects slightly different structure for upload than what it gives
+    // for download. This is abstracted away here to make constructing the upload json
+    // a bit easier.
     pub fn get_body(&self) -> &String {
         match &self.body {
             Body::Upload(storage) => &storage.value,
@@ -23,6 +26,7 @@ impl Page {
         }
     }
 
+    // TODO: fix this logic to allow self-modification of retrived body value
     pub fn set_body(&mut self, body_value: String) {
         fn update_body(
         match self.body {
