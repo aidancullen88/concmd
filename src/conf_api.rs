@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Ok, Result};
 use reqwest::blocking;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -9,7 +9,7 @@ use crate::Key;
 pub struct Page {
     pub id: String,
     pub title: String,
-    status: &'static str,
+    status: String,
     pub version: PageVersion,
     body: Body,
 }
@@ -24,34 +24,31 @@ impl Page {
     }
 
     pub fn set_body(&mut self, body_value: String) {
-        fn update_body(
-        match self.body {
+        match &mut self.body {
             Body::Upload(storage) => storage.value = body_value,
             Body::Download(page_body) => page_body.storage.value = body_value,
         }
     }
 
     pub fn get_page_by_id(key: &Key, id: &String) -> Result<Page> {
-        let client = blocking::Client::new();
-        let resp = client
-            .get(format!(
+        let resp = send_request(key, RequestType::GET, format!(
                 "https://{}/wiki/api/v2/pages/{}?body-format=editor",
                 key.confluence_domain, id
-            ))
-            .basic_auth(&key.username, Some(&key.token))
-            .send()?
+            ))?
             .text()?;
-        Ok(serde_json::from_str::<Page>(resp.as_str())?)
+        // Ok(serde_json::from_str::<Page>(&resp)?)
+        let page = serde_json::from_str::<Page>(&resp)?;
+        Ok(page)
     }
 
-    pub fn update_page_by_id(self, key: &Key) -> Result<()> {
+    pub fn update_page_by_id(&mut self, key: &Key) -> Result<()> {
         self.version.number += 1; // don't think this works like this
         let serialised_body = serde_json::to_string(&self)?;
 
-        let resp = send_request(key, RequestType::PUT, format!(
+        let _resp = send_request(key, RequestType::PUT(serialised_body), format!(
             "https://{}/wiki/api/v2/pages/{}",
             key.confluence_domain, self.id
-        ), serialised_body)?;
+        ))?;
         Ok(())
     }
 }
@@ -84,35 +81,29 @@ fn send_request(
     key: &Key,
     method: RequestType,
     url: String,
-    body: String,
 ) -> Result<blocking::Response> {
     let client = blocking::Client::new();
     let generic_client = match method {
         RequestType::GET => client.get(url),
-        RequestType::PUT => client.put(url).body(body),
+        RequestType::PUT(body) => client.put(url).body(body),
     };
     let resp = generic_client
         .basic_auth(&key.username, Some(&key.token))
         .header("Content-type", "application/json")
         .send()?;
-    if resp.status().is_success() {
-        println!("Successfully published page!")
-    } else {
-        println!("Page publishing failed: {:#?}", resp.text()?)
-    }
     Ok(resp)
 }
 
 enum RequestType {
     GET,
-    PUT,
+    PUT(String),
 }
 
 impl fmt::Display for RequestType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             RequestType::GET => write!(f, "GET"),
-            RequestType::PUT => write!(f, "PUT"),
+            RequestType::PUT(_) => write!(f, "PUT"),
         }
     }
 }

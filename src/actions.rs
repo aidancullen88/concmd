@@ -29,16 +29,12 @@ pub fn edit_page_by_id(config: &Config, id: &String) {
 
     let user_input: String = text_io::read!("{}\n");
     match user_input.as_str() {
-        "y" | "Y" | "yes" | "Yes" => upload_page_by_id(&config.key, page, &file_path).unwrap(),
+        "y" | "Y" | "yes" | "Yes" => upload_page_by_id(&config.key, &mut page, &file_path).unwrap(),
         _ => (),
     }
 }
 
 // Worker functions
-
-// pub fn convert_path_to_pathbuf(location: &String) -> Result<PathBuf> {
-//     Ok(expanduser::expanduser(location.clone())?)
-// }
 
 fn save_page_to_file(location: &PathBuf, id: &String, body: &String) -> Result<PathBuf> {
     let mut file_path = location.clone();
@@ -83,11 +79,11 @@ fn open_editor(path: &PathBuf) {
         .expect("nvim exited with non-zero status");
 }
 
-fn upload_page_by_id(key: &Key, page: Page, file_path: &PathBuf) -> Result<()> {
+fn upload_page_by_id(key: &Key, page: &mut Page, file_path: &PathBuf) -> Result<()> {
     let mut file = File::open(file_path)?;
     let mut unescaped_body = String::new();
     file.read_to_string(&mut unescaped_body)?;
-    page= reescape_chars(&unescaped_body);
+    page.set_body(reescape_chars(&unescaped_body));
     // Process here if needed
     page.update_page_by_id(key)?;
     Ok(())
