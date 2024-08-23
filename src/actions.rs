@@ -5,6 +5,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::Command;
+use htmd::{Element, HtmlToMarkdown};
 
 use crate::conf_api::Page;
 use crate::Config;
@@ -39,14 +40,20 @@ pub fn edit_page_by_id(config: &Config, id: &String) {
 fn save_page_to_file(location: &PathBuf, id: &String, body: &String) -> Result<PathBuf> {
     let mut file_path = location.clone();
     file_path.push(id);
-    file_path.set_extension("html");
+    file_path.set_extension("md");
     let mut file = File::create(&file_path)?;
-    // " are downloaded as &quot; from confluence: replace for easy reading
-    // serialising to JSON when publishing handles putting them back
-    let body_unescaped = unescape_chars(body);
-    let body_table_replaced = remove_complex_table(&body_unescaped);
+    // let body_unescaped = unescape_chars(body);
+    // let body_table_replaced = remove_complex_table(&body_unescaped);
+    let converter = HtmlToMarkdown::builder()
+        .add_handler(vec!["table"], |ele: Element| Some(custom_tables(ele)))
+        .build();
+    let body_table_replaced = converter.convert(body)?;
     file.write_all(body_table_replaced.as_bytes())?;
     Ok(file_path)
+}
+
+fn custom_tables(ele: Element) -> String {
+
 }
 
 fn remove_complex_table(body: &str) -> Cow<str> {

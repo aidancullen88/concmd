@@ -22,7 +22,7 @@ impl Page {
     pub fn get_body(&self) -> &String {
         match &self.body {
             Body::Upload(storage) => &storage.value,
-            Body::Download(page_body) => &page_body.storage.value,
+            Body::Download(page_body) => &page_body.editor.value,
         }
     }
 
@@ -30,7 +30,7 @@ impl Page {
     pub fn set_body(&mut self, body_value: String) {
         match &mut self.body {
             Body::Upload(storage) => storage.value = body_value,
-            Body::Download(page_body) => page_body.storage.value = body_value,
+            Body::Download(page_body) => page_body.editor.value = body_value,
         }
     }
 
@@ -66,7 +66,7 @@ enum Body {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct PageBody {
-    storage: Storage,
+    editor: Storage,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
