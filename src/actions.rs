@@ -6,6 +6,7 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::Command;
 use htmd::{Element, HtmlToMarkdown};
+use markup5ever_rcdom::{Node, NodeData};
 
 use crate::conf_api::Page;
 use crate::Config;
@@ -52,8 +53,15 @@ fn save_page_to_file(location: &PathBuf, id: &String, body: &String) -> Result<P
     Ok(file_path)
 }
 
-fn custom_tables(ele: Element) -> String {
+fn custom_tables(ele: Element) -> Option<String> {
+    match ele.node.children.into_inner().iter().nth(0) {
+        Some(header_row) => generate_header(header_row),
+        None => None
+    }
+}
 
+fn generate_header(header_row: &Node) -> Option<String> {
+    todo!("do this")
 }
 
 fn remove_complex_table(body: &str) -> Cow<str> {
