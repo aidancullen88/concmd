@@ -53,7 +53,7 @@ enum Action {
 struct Config {
     #[serde(deserialize_with = "from_tilde_path")]
     save_location: PathBuf,
-    key: Key,
+    api: Api,
 }
 
 impl Config {
@@ -68,7 +68,7 @@ impl Config {
 }
 
 #[derive(Deserialize, Debug)]
-struct Key {
+struct Api {
     confluence_domain: String,
     username: String,
     token: String,
