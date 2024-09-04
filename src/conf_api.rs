@@ -3,7 +3,7 @@ use reqwest::blocking;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-use crate::Key;
+use crate::Api;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Page {
@@ -34,10 +34,10 @@ impl Page {
         }
     }
 
-    pub fn get_page_by_id(key: &Key, id: &String) -> Result<Page> {
-        let resp = send_request(key, RequestType::GET, format!(
+    pub fn get_page_by_id(api: &Api, id: &String) -> Result<Page> {
+        let resp = send_request(api, RequestType::GET, format!(
                 "https://{}/wiki/api/v2/pages/{}?body-format=editor",
-                key.confluence_domain, id
+                api.confluence_domain, id
             ))?
             .text()?;
         // Ok(serde_json::from_str::<Page>(&resp)?)
@@ -45,13 +45,13 @@ impl Page {
         Ok(page)
     }
 
-    pub fn update_page_by_id(&mut self, key: &Key) -> Result<()> {
+    pub fn update_page_by_id(&mut self, api: &Api) -> Result<()> {
         self.version.number += 1; // don't think this works like this
         let serialised_body = serde_json::to_string(&self)?;
 
-        let _resp = send_request(key, RequestType::PUT(serialised_body), format!(
+        let _resp = send_request(api, RequestType::PUT(serialised_body), format!(
             "https://{}/wiki/api/v2/pages/{}",
-            key.confluence_domain, self.id
+            api.confluence_domain, self.id
         ))?;
         Ok(())
     }
@@ -82,7 +82,7 @@ struct Storage {
 }
 
 fn send_request(
-    key: &Key,
+    api: &Api,
     method: RequestType,
     url: String,
 ) -> Result<blocking::Response> {
@@ -92,7 +92,7 @@ fn send_request(
         RequestType::PUT(body) => client.put(url).body(body),
     };
     let resp = generic_client
-        .basic_auth(&key.username, Some(&key.token))
+        .basic_auth(&api.username, Some(&api.token))
         .header("Content-type", "application/json")
         .send()?;
     Ok(resp)
