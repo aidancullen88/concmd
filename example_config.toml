@@ -1,11 +1,11 @@
 # MANDATORY: The location to save downloaded pages to.
-# save_location = '~/confluence_downloads'
+save_location = '~/confluence_downloads'
 
-# MANDATORY: Key stores the api access information for confluence
-# [key]
-## The domain of your confluence instance (i.e. https://<your-domain>/wiki/...)
-# confluence_domain = ''
-## Your confluence username
-# username = 
-## Your confluence API token
-#token = ''
+# MANDATORY: api stores the api access information for confluence
+[api]
+# The domain of your confluence instance (i.e. https://<your-domain>/wiki/...)
+confluence_domain = 'exampledomain.atlassian.net'
+# Your confluence username
+username = 'example@exampledomain.com'
+# Your confluence API token
+token = '<encoded token>'
