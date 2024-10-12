@@ -45,24 +45,21 @@ fn save_page_to_file(location: &PathBuf, id: &String, body: &String) -> Result<P
     let mut file = File::create(&file_path)?;
     // let body_unescaped = unescape_chars(body);
     // let body_table_replaced = remove_complex_table(&body_unescaped);
-    let converter = HtmlToMarkdown::builder()
-        .add_handler(vec!["table"], |ele: Element| Some(custom_tables(ele)))
-        .build();
-    let body_table_replaced = converter.convert(body)?;
+    let body_table_replaced = html2md::parse_html(body);
     file.write_all(body_table_replaced.as_bytes())?;
     Ok(file_path)
 }
 
-fn custom_tables(ele: Element) -> Option<String> {
-    match ele.node.children.into_inner().iter().nth(0) {
-        Some(header_row) => generate_header(header_row),
-        None => None
-    }
-}
-
-fn generate_header(header_row: &Node) -> Option<String> {
-    todo!("do this")
-}
+// fn custom_tables(ele: Element) -> Option<String> {
+//     match ele.node.children.clone().into_inner().iter().nth(0) {
+//         Some(header_row) => generate_table_row(header_row),
+//         None => None
+//     }
+// }
+//
+// fn generate_table_row(header_row: &Node) -> Option<String> {
+//     todo!("do this")
+// }
 
 fn remove_complex_table(body: &str) -> Cow<str> {
     let table_regex = Regex::new(r"<table[^>]*>").expect("regex should always complile");
