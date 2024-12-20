@@ -55,7 +55,7 @@ impl Page {
             api.confluence_domain, self.id
         ))?;
         println!("{:?}", resp.status());
-        if (resp.status() == 400) {
+        if resp.status() == 400 {
             print!("{:#?}", resp.text().unwrap());
         }
         Ok(())
