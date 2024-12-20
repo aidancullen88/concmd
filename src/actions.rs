@@ -5,8 +5,6 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::Command;
-use htmd::{Element, HtmlToMarkdown};
-use markup5ever_rcdom::{Node, NodeData};
 
 use crate::conf_api::Page;
 use crate::Config;
