@@ -48,11 +48,16 @@ impl Page {
     pub fn update_page_by_id(&mut self, api: &Api) -> Result<()> {
         self.version.number += 1; // don't think this works like this
         let serialised_body = serde_json::to_string(&self)?;
+        println!("Updating page!");
 
-        let _resp = send_request(api, RequestType::PUT(serialised_body), format!(
+        let resp = send_request(api, RequestType::PUT(serialised_body), format!(
             "https://{}/wiki/api/v2/pages/{}",
             api.confluence_domain, self.id
         ))?;
+        println!("{:?}", resp.status());
+        if (resp.status() == 400) {
+            print!("{:#?}", resp.text().unwrap());
+        }
         Ok(())
     }
 }
