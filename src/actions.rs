@@ -1,6 +1,6 @@
 use anyhow::Result;
-use regex::Regex;
-use std::borrow::Cow;
+// use regex::Regex;
+// use std::borrow::Cow;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -59,18 +59,18 @@ fn save_page_to_file(location: &PathBuf, id: &String, body: &String) -> Result<P
 //     todo!("do this")
 // }
 
-fn remove_complex_table(body: &str) -> Cow<str> {
-    let table_regex = Regex::new(r"<table[^>]*>").expect("regex should always complile");
-    table_regex.replace_all(body, "<table>")
-}
-
-fn unescape_chars(body: &str) -> String {
-    body.replace("&quot;", "\"")
-        .replace("&rsquo;", "'")
-        .replace("&lsquo;", "'")
-        .replace("&rdquo;", "\"")
-        .replace("&ldquo;", "\"")
-}
+// fn remove_complex_table(body: &str) -> Cow<str> {
+//     let table_regex = Regex::new(r"<table[^>]*>").expect("regex should always complile");
+//     table_regex.replace_all(body, "<table>")
+// }
+//
+// fn unescape_chars(body: &str) -> String {
+//     body.replace("&quot;", "\"")
+//         .replace("&rsquo;", "'")
+//         .replace("&lsquo;", "'")
+//         .replace("&rdquo;", "\"")
+//         .replace("&ldquo;", "\"")
+// }
 
 fn reescape_chars(body: &String) -> String {
     body.replace("\"", "&quot;")

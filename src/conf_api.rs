@@ -30,7 +30,13 @@ impl Page {
     pub fn set_body(&mut self, body_value: String) {
         match &mut self.body {
             Body::Upload(storage) => storage.value = body_value,
-            Body::Download(page_body) => page_body.editor.value = body_value,
+            Body::Download(_) => {
+                let new_body = Storage {
+                    value: body_value,
+                    representation: "storage".to_string()
+                };
+                self.body = Body::Upload(new_body)
+            },
         }
     }
 
@@ -42,12 +48,14 @@ impl Page {
             .text()?;
         // Ok(serde_json::from_str::<Page>(&resp)?)
         let page = serde_json::from_str::<Page>(&resp)?;
+        println!("{:#?}", page);
         Ok(page)
     }
 
     pub fn update_page_by_id(&mut self, api: &Api) -> Result<()> {
         self.version.number += 1; // don't think this works like this
         let serialised_body = serde_json::to_string(&self)?;
+        println!("{}", serde_json::to_string_pretty(&self)?);
         println!("Updating page!");
 
         let resp = send_request(api, RequestType::PUT(serialised_body), format!(
@@ -56,7 +64,7 @@ impl Page {
         ))?;
         println!("{:?}", resp.status());
         if resp.status() == 400 {
-            print!("{:#?}", resp.text().unwrap());
+            print!("{:#?}\n", resp.text().unwrap());
         }
         Ok(())
     }
