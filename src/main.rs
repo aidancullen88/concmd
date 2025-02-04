@@ -54,6 +54,7 @@ struct Config {
     #[serde(deserialize_with = "from_tilde_path")]
     save_location: PathBuf,
     api: Api,
+    editor: Option<String>,
 }
 
 impl Config {

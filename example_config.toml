@@ -1,6 +1,8 @@
 # MANDATORY: The location to save downloaded pages to.
 save_location = '~/confluence_downloads'
 
+# OPTIONAL: The editor to open the markdown file in. Defaults to vim
+
 # MANDATORY: api stores the api access information for confluence
 [api]
 # The domain of your confluence instance (i.e. https://<your-domain>/wiki/...)

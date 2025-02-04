@@ -14,6 +14,30 @@ pub struct Page {
     body: Body,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)]
+enum Body {
+    Download(PageBody),
+    Upload(Storage),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct PageBody {
+    editor: Storage,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Storage {
+    value: String,
+    representation: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct PageVersion {
+    pub number: usize,
+    pub message: Option<String>,
+}
+
 impl Page {
     // Getter and setter for body to allow for download and upload in the same struct.
     // Confluence expects slightly different structure for upload than what it gives
@@ -27,41 +51,49 @@ impl Page {
     }
 
     // TODO: fix this logic to allow self-modification of retrived body value
+    // current implementation:
+    // when body is first downloaded it is Body::Download
+    // Any time body is set, it is set to Body::Upload with the new body string
+    // and the correct represetation
     pub fn set_body(&mut self, body_value: String) {
         match &mut self.body {
             Body::Upload(storage) => storage.value = body_value,
             Body::Download(_) => {
                 let new_body = Storage {
                     value: body_value,
-                    representation: "storage".to_string()
+                    representation: "storage".to_string(),
                 };
                 self.body = Body::Upload(new_body)
-            },
+            }
         }
     }
 
     pub fn get_page_by_id(api: &Api, id: &String) -> Result<Page> {
-        let resp = send_request(api, RequestType::GET, format!(
+        let resp = send_request(
+            api,
+            RequestType::GET,
+            format!(
                 "https://{}/wiki/api/v2/pages/{}?body-format=editor",
                 api.confluence_domain, id
-            ))?
-            .text()?;
-        // Ok(serde_json::from_str::<Page>(&resp)?)
-        let page = serde_json::from_str::<Page>(&resp)?;
-        println!("{:#?}", page);
-        Ok(page)
+            ),
+        )?
+        .text()?;
+        Ok(serde_json::from_str::<Page>(&resp)?)
     }
 
     pub fn update_page_by_id(&mut self, api: &Api) -> Result<()> {
         self.version.number += 1; // don't think this works like this
         let serialised_body = serde_json::to_string(&self)?;
-        println!("{}", serde_json::to_string_pretty(&self)?);
         println!("Updating page!");
 
-        let resp = send_request(api, RequestType::PUT(serialised_body), format!(
-            "https://{}/wiki/api/v2/pages/{}",
-            api.confluence_domain, self.id
-        ))?;
+        let resp = send_request(
+            api,
+            RequestType::PUT(serialised_body),
+            format!(
+                "https://{}/wiki/api/v2/pages/{}",
+                api.confluence_domain, self.id
+            ),
+        )?;
         println!("{:?}", resp.status());
         if resp.status() == 400 {
             print!("{:#?}\n", resp.text().unwrap());
@@ -70,35 +102,7 @@ impl Page {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(untagged)]
-enum Body {
-    Download(PageBody),
-    Upload(Storage),
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct PageBody {
-    editor: Storage,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct PageVersion {
-    pub number: usize,
-    pub message: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Storage {
-    value: String,
-    representation: String,
-}
-
-fn send_request(
-    api: &Api,
-    method: RequestType,
-    url: String,
-) -> Result<blocking::Response> {
+fn send_request(api: &Api, method: RequestType, url: String) -> Result<blocking::Response> {
     let client = blocking::Client::new();
     let generic_client = match method {
         RequestType::GET => client.get(url),
