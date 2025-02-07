@@ -104,6 +104,6 @@ fn main() {
             page,
             filename,
         } => crate::actions::publish_page(space, page, filename),
-        Action::Edit { id } => crate::actions::edit_page_by_id(&config, id),
+        Action::Edit { id } => crate::actions::edit_page(&config, id),
     }
 }

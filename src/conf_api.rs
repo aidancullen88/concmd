@@ -81,11 +81,9 @@ impl Page {
         Ok(serde_json::from_str::<Page>(&resp)?)
     }
 
-    pub fn update_page_by_id(&mut self, api: &Api) -> Result<()> {
+    pub fn update_page_by_id(&mut self, api: &Api) -> Result<blocking::Response> {
         self.version.number += 1; // don't think this works like this
         let serialised_body = serde_json::to_string(&self)?;
-        println!("Updating page!");
-
         let resp = send_request(
             api,
             RequestType::PUT(serialised_body),
@@ -94,11 +92,7 @@ impl Page {
                 api.confluence_domain, self.id
             ),
         )?;
-        println!("{:?}", resp.status());
-        if resp.status() == 400 {
-            print!("{:#?}\n", resp.text().unwrap());
-        }
-        Ok(())
+        Ok(resp)
     }
 }
 
