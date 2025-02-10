@@ -25,7 +25,7 @@ pub fn edit_page(config: &Config, id: &String) {
     let file_path = save_page_to_file(&config.save_location, id, page.get_body()).unwrap(); // figure out errors here
     open_editor(&file_path, &config.editor);
     // Wait here for editor to close
-    print!("Do you wish to publish this page: y/n?  ");
+    print!("Do you wish to publish this page: y/n? ");
     let user_input: String = text_io::read!("{}\n");
     match user_input.as_str() {
         "y" | "Y" | "yes" | "Yes" => upload_page(&config.api, &mut page, &file_path).unwrap(),
