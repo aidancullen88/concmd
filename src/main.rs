@@ -1,7 +1,9 @@
 mod actions;
 mod conf_api;
+mod tui;
 
 use anyhow::{Context, Result};
+use cursive::Cursive;
 use serde::{de::Error, Deserialize, Deserializer};
 use std::fs::File;
 use std::{
@@ -22,30 +24,11 @@ struct Args {
 
 #[derive(Debug, clap::Subcommand)]
 enum Action {
-    Fetch {
-        #[arg(short, long)]
-        space: String,
-
-        #[arg(short, long)]
-        page: String,
-
-        #[arg(short, long)]
-        filename: PathBuf,
-    },
-    Publish {
-        #[arg(short, long)]
-        space: String,
-
-        #[arg(short, long)]
-        page: String,
-
-        #[arg(short, long)]
-        filename: PathBuf,
-    },
     Edit {
         #[arg(short, long)]
         id: String,
     },
+    View,
 }
 
 // Config structure. Note deserialize_with for save_location, see fn
@@ -86,24 +69,23 @@ where
 }
 
 fn main() {
-    let mut home_dir = home::home_dir().expect("home dir should always exist");
-    home_dir.push(".config/concmd/config.toml");
-
-    let config = Config::read_config(&home_dir).unwrap();
+    let config = get_config();
 
     let cli = Args::parse();
 
     match &cli.action {
-        Action::Fetch {
-            space,
-            page,
-            filename,
-        } => crate::actions::fetch_page(space, page, filename),
-        Action::Publish {
-            space,
-            page,
-            filename,
-        } => crate::actions::publish_page(space, page, filename),
         Action::Edit { id } => crate::actions::edit_page(&config, id),
+        Action::View => {
+            let mut siv = Cursive::default();
+            siv.set_user_data(config);
+            crate::tui::display(&mut siv)
+        }
     }
+}
+
+fn get_config() -> Config {
+    let mut home_dir = home::home_dir().expect("home dir should always exist");
+    home_dir.push(".config/concmd/config.toml");
+
+    Config::read_config(&home_dir).unwrap()
 }

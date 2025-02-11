@@ -5,18 +5,18 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::Command;
 
-use crate::conf_api::Page;
+use crate::conf_api::{Page, Space};
 use crate::Api;
 use crate::Config;
 
 // Interface
 
-pub fn fetch_page(_space: &String, _page: &String, _filename: &PathBuf) {
-    todo!()
+pub fn load_space_list(config: &Config) -> Result<Vec<Space>> {
+    Space::get_spaces(&config.api)
 }
 
-pub fn publish_page(_space: &String, _page: &String, _filename: &PathBuf) {
-    todo!()
+pub fn load_page_list_for_space(config: &Config, space_id: &str) -> Result<Vec<Page>> {
+    Page::get_pages(&config.api, space_id)
 }
 
 // full workflow for page edit: pulls page, opens nvim, pushes page
@@ -29,7 +29,7 @@ pub fn edit_page(config: &Config, id: &String) {
     let user_input: String = text_io::read!("{}\n");
     match user_input.as_str() {
         "y" | "Y" | "yes" | "Yes" => upload_page(&config.api, &mut page, &file_path).unwrap(),
-        _ => ()
+        _ => (),
     };
 }
 
@@ -81,9 +81,9 @@ fn open_editor(path: &PathBuf, editor: &Option<String>) {
     let (command, args) = match editor {
         None => ("vim", vec!["-c", "set columns=120", "-c", "set linebreak"]),
         Some(ed) if ed == "nvim" => ("nvim", vec!["-c", "set columns=120", "-c", "set linebreak"]),
-        Some(ed) => (ed.as_str(), vec![""])
+        Some(ed) => (ed.as_str(), vec![""]),
     };
-    
+
     Command::new(command)
         .args(args)
         .arg(path)
@@ -103,7 +103,7 @@ fn upload_page(api: &Api, page: &mut Page, file_path: &PathBuf) -> Result<()> {
     let resp = page.update_page_by_id(api)?;
     match resp.status().as_u16() {
         200 => println!("Upload successfully complete"),
-        _ => println!("Upload errored with message: {:?}", resp.text().unwrap())
+        _ => println!("Upload errored with message: {:?}", resp.text().unwrap()),
     }
     Ok(())
 }

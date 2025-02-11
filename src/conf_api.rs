@@ -5,6 +5,15 @@ use std::fmt;
 
 use crate::Api;
 
+pub trait Name {
+    fn get_name(&self) -> String;
+}
+
+#[derive(Deserialize)]
+struct PageResults {
+    results: Vec<Page>,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Page {
     pub id: String,
@@ -19,6 +28,12 @@ pub struct Page {
 enum Body {
     Download(PageBody),
     Upload(Storage),
+    BulkFetch(BulkBody),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct BulkBody {
+    storage: Storage,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -38,6 +53,12 @@ pub struct PageVersion {
     pub message: Option<String>,
 }
 
+impl Name for Page {
+    fn get_name(&self) -> String {
+        self.title.clone()
+    }
+}
+
 impl Page {
     // Getter and setter for body to allow for download and upload in the same struct.
     // Confluence expects slightly different structure for upload than what it gives
@@ -47,6 +68,7 @@ impl Page {
         match &self.body {
             Body::Upload(storage) => &storage.value,
             Body::Download(page_body) => &page_body.editor.value,
+            Body::BulkFetch(bulk_body) => &bulk_body.storage.value,
         }
     }
 
@@ -58,7 +80,7 @@ impl Page {
     pub fn set_body(&mut self, body_value: String) {
         match &mut self.body {
             Body::Upload(storage) => storage.value = body_value,
-            Body::Download(_) => {
+            _ => {
                 let new_body = Storage {
                     value: body_value,
                     representation: "storage".to_string(),
@@ -93,6 +115,55 @@ impl Page {
             ),
         )?;
         Ok(resp)
+    }
+
+    pub fn get_pages(api: &Api, space_id: &str) -> Result<Vec<Page>> {
+        let resp = send_request(
+            api,
+            RequestType::GET,
+            format!(
+                "https://{}/wiki/api/v2/pages?space-id={}&body-format=storage",
+                api.confluence_domain, space_id
+            ),
+        )?
+        .text()?;
+        println!("{:#?}", resp);
+        let results = serde_json::from_str::<PageResults>(&resp)?;
+        Ok(results.results)
+    }
+}
+
+#[derive(Deserialize)]
+struct SpaceResults {
+    results: Vec<Space>,
+}
+
+#[derive(Deserialize)]
+pub struct Space {
+    pub id: String,
+    key: String,
+    pub name: String,
+}
+
+impl Name for Space {
+    fn get_name(&self) -> String {
+        self.name.clone()
+    }
+}
+
+impl Space {
+    pub fn get_spaces(api: &Api) -> Result<Vec<Space>> {
+        let resp = send_request(
+            api,
+            RequestType::GET,
+            format!(
+                "https://{}/wiki/api/v2/spaces?limit=250&labels=api",
+                api.confluence_domain
+            ),
+        )?
+        .text()?;
+        let results = serde_json::from_str::<SpaceResults>(&resp)?;
+        Ok(results.results)
     }
 }
 
