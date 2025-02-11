@@ -72,7 +72,6 @@ impl Page {
         }
     }
 
-    // TODO: fix this logic to allow self-modification of retrived body value
     // current implementation:
     // when body is first downloaded it is Body::Download
     // Any time body is set, it is set to Body::Upload with the new body string
@@ -93,7 +92,7 @@ impl Page {
     pub fn get_page_by_id(api: &Api, id: &String) -> Result<Page> {
         let resp = send_request(
             api,
-            RequestType::GET,
+            RequestType::Get,
             format!(
                 "https://{}/wiki/api/v2/pages/{}?body-format=editor",
                 api.confluence_domain, id
@@ -104,11 +103,11 @@ impl Page {
     }
 
     pub fn update_page_by_id(&mut self, api: &Api) -> Result<blocking::Response> {
-        self.version.number += 1; // don't think this works like this
+        self.version.number += 1;
         let serialised_body = serde_json::to_string(&self)?;
         let resp = send_request(
             api,
-            RequestType::PUT(serialised_body),
+            RequestType::Put(serialised_body),
             format!(
                 "https://{}/wiki/api/v2/pages/{}",
                 api.confluence_domain, self.id
@@ -120,14 +119,13 @@ impl Page {
     pub fn get_pages(api: &Api, space_id: &str) -> Result<Vec<Page>> {
         let resp = send_request(
             api,
-            RequestType::GET,
+            RequestType::Get,
             format!(
                 "https://{}/wiki/api/v2/pages?space-id={}&body-format=storage",
                 api.confluence_domain, space_id
             ),
         )?
         .text()?;
-        println!("{:#?}", resp);
         let results = serde_json::from_str::<PageResults>(&resp)?;
         Ok(results.results)
     }
@@ -141,7 +139,7 @@ struct SpaceResults {
 #[derive(Deserialize)]
 pub struct Space {
     pub id: String,
-    key: String,
+    _key: String,
     pub name: String,
 }
 
@@ -155,7 +153,7 @@ impl Space {
     pub fn get_spaces(api: &Api) -> Result<Vec<Space>> {
         let resp = send_request(
             api,
-            RequestType::GET,
+            RequestType::Get,
             format!(
                 "https://{}/wiki/api/v2/spaces?limit=250&labels=api",
                 api.confluence_domain
@@ -170,8 +168,8 @@ impl Space {
 fn send_request(api: &Api, method: RequestType, url: String) -> Result<blocking::Response> {
     let client = blocking::Client::new();
     let generic_client = match method {
-        RequestType::GET => client.get(url),
-        RequestType::PUT(body) => client.put(url).body(body),
+        RequestType::Get => client.get(url),
+        RequestType::Put(body) => client.put(url).body(body),
     };
     let resp = generic_client
         .basic_auth(&api.username, Some(&api.token))
@@ -181,15 +179,15 @@ fn send_request(api: &Api, method: RequestType, url: String) -> Result<blocking:
 }
 
 enum RequestType {
-    GET,
-    PUT(String),
+    Get,
+    Put(String),
 }
 
 impl fmt::Display for RequestType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            RequestType::GET => write!(f, "GET"),
-            RequestType::PUT(_) => write!(f, "PUT"),
+            RequestType::Get => write!(f, "GET"),
+            RequestType::Put(_) => write!(f, "PUT"),
         }
     }
 }

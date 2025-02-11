@@ -38,7 +38,7 @@ pub fn edit_page(config: &Config, id: &String) {
 fn save_page_to_file(location: &PathBuf, id: &String, body: &String) -> Result<PathBuf> {
     let converted_body = convert_html_to_md(body)?;
 
-    let mut file_path = location.clone();
+    let mut file_path = location.to_path_buf();
     file_path.push(id);
     file_path.set_extension("md");
     let mut file = File::create(&file_path)?;
@@ -80,7 +80,7 @@ fn convert_md_to_html(body: &String) -> Result<String> {
 fn open_editor(path: &PathBuf, editor: &Option<String>) {
     let (command, args) = match editor {
         None => ("vim", vec!["-c", "set columns=120", "-c", "set linebreak"]),
-        Some(ed) if ed == "nvim" => ("nvim", vec!["-c", "set columns=120", "-c", "set linebreak"]),
+        Some(ed) if ed == "nvim" => ("nvim", vec!["-c", "set columns=120", "-c", "set linebreak", "-c", "set spell"]),
         Some(ed) => (ed.as_str(), vec![""]),
     };
 

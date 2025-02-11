@@ -10,7 +10,6 @@ use std::{
     io::Read,
     path::{Path, PathBuf},
 };
-use toml;
 
 use clap::Parser;
 
@@ -43,7 +42,7 @@ struct Config {
 impl Config {
     fn read_config<P: AsRef<Path>>(file_name: &P) -> Result<Config> {
         let mut contents = String::new();
-        let mut file = File::open(&file_name).context("Config file could not be found")?;
+        let mut file = File::open(file_name).context("Config file could not be found")?;
         file.read_to_string(&mut contents)
             .context("File is not readable")?;
         toml::from_str::<Config>(contents.as_str())

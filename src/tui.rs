@@ -30,7 +30,7 @@ pub fn display(siv: &mut Cursive) {
         let config = s
             .user_data::<Config>()
             .expect("Config should always be loaded to cursive");
-        let page_list = crate::actions::load_page_list_for_space(&config, &space.id).unwrap();
+        let page_list = crate::actions::load_page_list_for_space(config, &space.id).unwrap();
         let page_select = build_list(page_list.into_iter());
         s.pop_layer();
         s.add_layer(Dialog::around(page_select).title(format!("Pages in {}", &space.name)));
