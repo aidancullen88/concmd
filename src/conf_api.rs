@@ -131,15 +131,15 @@ impl Page {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct SpaceResults {
     results: Vec<Space>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Space {
     pub id: String,
-    _key: String,
+    // key: String,
     pub name: String,
 }
 
@@ -151,15 +151,22 @@ impl Name for Space {
 
 impl Space {
     pub fn get_spaces(api: &Api) -> Result<Vec<Space>> {
-        let resp = send_request(
-            api,
-            RequestType::Get,
-            format!(
-                "https://{}/wiki/api/v2/spaces?limit=250&labels=api",
-                api.confluence_domain
-            ),
-        )?
-        .text()?;
+        let url = match &api.label {
+            Some(label) => {
+                format!(
+                    "https://{}/wiki/api/v2/spaces?limit=250&labels={}",
+                    api.confluence_domain,
+                    label
+                )
+            }
+            None => {
+                format!(
+                    "https://{}/wiki/api/v2/spaces?limit=250&type=global",
+                    api.confluence_domain
+                )
+            }
+        };
+        let resp = send_request(api, RequestType::Get, url)?.text()?;
         let results = serde_json::from_str::<SpaceResults>(&resp)?;
         Ok(results.results)
     }

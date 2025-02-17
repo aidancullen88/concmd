@@ -31,7 +31,7 @@ enum Action {
 }
 
 // Config structure. Note deserialize_with for save_location, see fn
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 struct Config {
     #[serde(deserialize_with = "from_tilde_path")]
     save_location: PathBuf,
@@ -50,11 +50,12 @@ impl Config {
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 struct Api {
     confluence_domain: String,
     username: String,
     token: String,
+    label: Option<String>,
 }
 
 // Implements a custom deserializer for save_location that automatically

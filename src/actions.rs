@@ -19,8 +19,8 @@ pub fn load_page_list_for_space(config: &Config, space_id: &str) -> Result<Vec<P
     Page::get_pages(&config.api, space_id)
 }
 
-// full workflow for page edit: pulls page, opens nvim, pushes page
 pub fn edit_page(config: &Config, id: &String) {
+// full workflow for page edit: pulls page, opens nvim, pushes page
     let mut page = Page::get_page_by_id(&config.api, id).unwrap();
     let file_path = save_page_to_file(&config.save_location, id, page.get_body()).unwrap(); // figure out errors here
     open_editor(&file_path, &config.editor);
@@ -80,7 +80,17 @@ fn convert_md_to_html(body: &String) -> Result<String> {
 fn open_editor(path: &PathBuf, editor: &Option<String>) {
     let (command, args) = match editor {
         None => ("vim", vec!["-c", "set columns=120", "-c", "set linebreak"]),
-        Some(ed) if ed == "nvim" => ("nvim", vec!["-c", "set columns=120", "-c", "set linebreak", "-c", "set spell"]),
+        Some(ed) if ed == "nvim" => (
+            "nvim",
+            vec![
+                "-c",
+                "set columns=120",
+                "-c",
+                "set linebreak",
+                "-c",
+                "set spell",
+            ],
+        ),
         Some(ed) => (ed.as_str(), vec![""]),
     };
 

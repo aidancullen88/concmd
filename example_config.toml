@@ -2,12 +2,18 @@
 save_location = '~/confluence_downloads'
 
 # OPTIONAL: The editor to open the markdown file in. Defaults to vim
+editor = 'nvim'
 
 # MANDATORY: api stores the api access information for confluence
 [api]
 # The domain of your confluence instance (i.e. https://<your-domain>/wiki/...)
 confluence_domain = 'exampledomain.atlassian.net'
+
 # Your confluence username
 username = 'example@exampledomain.com'
+
 # Your confluence API token
 token = '<encoded token>'
+
+# The label to select spaces by. Defaults to all global spaces if none set
+label = 'api'
