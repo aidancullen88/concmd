@@ -155,8 +155,7 @@ impl Space {
             Some(label) => {
                 format!(
                     "https://{}/wiki/api/v2/spaces?limit=250&labels={}",
-                    api.confluence_domain,
-                    label
+                    api.confluence_domain, label
                 )
             }
             None => {

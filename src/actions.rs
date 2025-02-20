@@ -20,7 +20,7 @@ pub fn load_page_list_for_space(config: &Config, space_id: &str) -> Result<Vec<P
 }
 
 pub fn edit_page(config: &Config, id: &String) {
-// full workflow for page edit: pulls page, opens nvim, pushes page
+    // full workflow for page edit: pulls page, opens nvim, pushes page
     let mut page = Page::get_page_by_id(&config.api, id).unwrap();
     let file_path = save_page_to_file(&config.save_location, id, page.get_body()).unwrap(); // figure out errors here
     open_editor(&file_path, &config.editor);

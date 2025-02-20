@@ -1,10 +1,11 @@
-use crate::conf_api::{Name, Space, Page};
+use crate::actions;
+use crate::conf_api::{Name, Page, Space};
 use crate::Config;
 
 use cursive::views::{Dialog, SelectView};
 use cursive::{Cursive, CursiveExt};
 
-pub fn display(siv: &mut Cursive) {
+pub fn display(pick_page_ui: &mut Cursive) {
     /*
      * Generic function to build the display lists from returned lists
      * As long as the api return type impls Name, we can build a display
@@ -24,12 +25,12 @@ pub fn display(siv: &mut Cursive) {
 
     // Config data is loaded in main() to avoid lifetime issues with
     // the callback below
-    let config = siv
+    let config = pick_page_ui
         .user_data::<Config>()
-        .expect("Config should always be loaded");
+        .expect("Config should always be loaded").clone();
 
     // API call to get the space list
-    let spaces = crate::actions::load_space_list(config).unwrap();
+    let spaces = crate::actions::load_space_list(&config).unwrap();
 
     let space_select = build_list(spaces.into_iter()).on_submit(on_space_select);
 
@@ -47,12 +48,18 @@ pub fn display(siv: &mut Cursive) {
     }
 
     fn on_page_select(s: &mut Cursive, page: &Page) {
-        let config = s.user_data::<Config>().expect("Config should always be loaded to cursive").clone();
+        s.set_user_data(page.id.clone());
         s.quit();
-        crate::actions::edit_page(&config, &page.id);
     }
 
-    siv.add_layer(Dialog::around(space_select).title("Spaces"));
+    pick_page_ui.add_layer(Dialog::around(space_select).title("Spaces"));
 
-    siv.run();
+    pick_page_ui.run();
+
+    if let Some(id) = pick_page_ui.user_data::<String>() {
+        actions::edit_page(&config, id);
+    } else {
+        panic!("Cursive should always return an ID as user data by the time it has exited")
+    }
+
 }
