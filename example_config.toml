@@ -1,8 +1,16 @@
 # MANDATORY: The location to save downloaded pages to.
 save_location = '~/confluence_downloads'
 
+# OPTIONAL: The location to save the history file to. Defaults to the same as save_location
+history_location = '~/confluence_downloads'
+
 # OPTIONAL: The editor to open the markdown file in. Defaults to vim
+[editor]
+# Cmd used to open the editor
 editor = 'nvim'
+# OPTIONAL: Arguments for the editor (page size, spell check etc). Defaults to none
+# Ensure each flag is a separate list item as below
+args = ["-c", "set columns=120", "-c", "set linebreak", "-c", "set spell"]
 
 # MANDATORY: api stores the api access information for confluence
 [api]
@@ -15,5 +23,5 @@ username = 'example@exampledomain.com'
 # Your confluence API token
 token = '<encoded token>'
 
-# The label to select spaces by. Defaults to all global spaces if none set
+# OPTIONAL: The label to select spaces by. Defaults to all global spaces if none set
 label = 'api'

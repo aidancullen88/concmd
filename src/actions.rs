@@ -2,12 +2,13 @@ use anyhow::Result;
 use core::panic;
 use std::fs::File;
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::conf_api::{Page, Space};
 use crate::Api;
 use crate::Config;
+use crate::Editor;
 
 // Interface
 
@@ -25,12 +26,32 @@ pub fn edit_page(config: &Config, id: &String) {
     let file_path = save_page_to_file(&config.save_location, id, page.get_body()).unwrap(); // figure out errors here
     open_editor(&file_path, &config.editor);
     // Wait here for editor to close
-    print!("Publish page: y/n? ");
+    print!("Publish page: y/n?: ");
     let user_input: String = text_io::read!("{}\n");
     match user_input.as_str() {
         "y" | "Y" | "yes" | "Yes" => upload_page(&config.api, &mut page, &file_path).unwrap(),
         _ => (),
     };
+    
+    let history_path = get_history_path_or_default(config);
+    std::fs::write(history_path, id).unwrap();
+}
+
+pub fn edit_last_page(config: &Config) {
+    let history_path = get_history_path_or_default(config);
+    
+    if !std::fs::metadata(&history_path).is_ok() {
+        println!("No history file found");
+        return
+    }
+
+    let history_id = std::fs::read(history_path).unwrap();
+    let id_string = match String::from_utf8(history_id) {
+        Ok(s) => s,
+        Err(e) => panic!("Invalid UTF-8 sequence: {}", e)
+    };
+
+    edit_page(&config, &id_string.trim().to_string());
 }
 
 // Worker functions
@@ -77,30 +98,26 @@ fn convert_md_to_html(body: &String) -> Result<String> {
     }
 }
 
-fn open_editor(path: &PathBuf, editor: &Option<String>) {
-    let (command, args) = match editor {
-        None => ("vim", vec!["-c", "set columns=120", "-c", "set linebreak"]),
-        Some(ed) if ed == "nvim" => (
-            "nvim",
-            vec![
-                "-c",
-                "set columns=120",
-                "-c",
-                "set linebreak",
-                "-c",
-                "set spell",
-            ],
-        ),
-        Some(ed) => (ed.as_str(), vec![""]),
+fn open_editor(path: &PathBuf, editor: &Option<Editor>) {
+    match editor {
+        None => Command::new("vim")
+            .arg(path)
+            .spawn()
+            .expect("editor should be available to open")
+            .wait()
+            .expect("editor exited with non-zero status"),
+        Some(ed) => {
+            let mut cmd = Command::new(&ed.editor);
+            if let Some(args) = &ed.args {
+                cmd.args(args);
+            };
+            cmd.arg(path)
+                .spawn()
+                .expect("failed to open editor")
+                .wait()
+                .expect("editor exited with non-zero status")
+        }
     };
-
-    Command::new(command)
-        .args(args)
-        .arg(path)
-        .spawn()
-        .expect("failed to open editor")
-        .wait()
-        .expect("editor exited with non-zero status");
 }
 
 fn upload_page(api: &Api, page: &mut Page, file_path: &PathBuf) -> Result<()> {
@@ -116,4 +133,11 @@ fn upload_page(api: &Api, page: &mut Page, file_path: &PathBuf) -> Result<()> {
         _ => println!("Upload errored with message: {:?}", resp.text().unwrap()),
     }
     Ok(())
+}
+
+fn get_history_path_or_default(config: &Config) -> PathBuf {
+    match &config.history_location {
+        Some(path) => Path::new(path).join("history.txt"),
+        None => config.save_location.clone().join("history.txt")
+    }
 }

@@ -14,6 +14,7 @@ pub fn display(pick_page_ui: &mut Cursive) {
     fn build_list<I>(list: I) -> SelectView<<I as Iterator>::Item>
     where
         I: Iterator,
+        // Name ensures that the items have a label representation
         I::Item: Name,
         I::Item: Sync,
         I::Item: Send,
@@ -27,7 +28,8 @@ pub fn display(pick_page_ui: &mut Cursive) {
     // the callback below
     let config = pick_page_ui
         .user_data::<Config>()
-        .expect("Config should always be loaded").clone();
+        .expect("Config should always be loaded")
+        .clone();
 
     // API call to get the space list
     let spaces = crate::actions::load_space_list(&config).unwrap();
@@ -61,5 +63,4 @@ pub fn display(pick_page_ui: &mut Cursive) {
     } else {
         panic!("Cursive should always return an ID as user data by the time it has exited")
     }
-
 }

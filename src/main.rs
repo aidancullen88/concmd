@@ -11,7 +11,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use clap::Parser;
+use clap::{ArgGroup, Parser};
 
 // Command line interface for clap
 #[derive(Parser, Debug)]
@@ -23,9 +23,17 @@ struct Args {
 
 #[derive(Debug, clap::Subcommand)]
 enum Action {
+    #[clap(group(
+        ArgGroup::new("edits")
+        .multiple(false)
+        .required(true)
+        .args(&["id", "last"]),
+    ))]
     Edit {
+        #[arg(long, action)]
+        last: bool,
         #[arg(short, long)]
-        id: String,
+        id: Option<String>,
     },
     View,
 }
@@ -35,8 +43,10 @@ enum Action {
 struct Config {
     #[serde(deserialize_with = "from_tilde_path")]
     save_location: PathBuf,
+    #[serde(default, deserialize_with = "from_tilde_path_optional")]
+    history_location: Option<PathBuf>,
     api: Api,
-    editor: Option<String>,
+    editor: Option<Editor>,
 }
 
 impl Config {
@@ -58,14 +68,32 @@ struct Api {
     label: Option<String>,
 }
 
+#[derive(Deserialize, Debug, Clone)]
+struct Editor {
+    editor: String,
+    args: Option<Vec<String>>,
+}
+
 // Implements a custom deserializer for save_location that automatically
 // expands the tilde to the users home directory (unix only)
+fn from_tilde_path_optional<'de, D>(deserializer: D) -> Result<Option<PathBuf>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s: Option<String> = Deserialize::deserialize(deserializer)?;
+    if let Some(s) = s {
+        return Ok(Some(expanduser::expanduser(s).map_err(D::Error::custom)?))
+    }
+
+    Ok(None)
+}
+
 fn from_tilde_path<'de, D>(deserializer: D) -> Result<PathBuf, D::Error>
 where
     D: Deserializer<'de>,
 {
     let s: String = Deserialize::deserialize(deserializer)?;
-    expanduser::expanduser(s).map_err(D::Error::custom)
+        expanduser::expanduser(s).map_err(D::Error::custom)
 }
 
 fn main() {
@@ -74,7 +102,16 @@ fn main() {
     let cli = Args::parse();
 
     match &cli.action {
-        Action::Edit { id } => crate::actions::edit_page(&config, id),
+        Action::Edit { id, last } => {
+            if *last {
+                actions::edit_last_page(&config)
+            } else {
+                // ID will always be present here, but check is required
+                if let Some(id) = id {
+                    actions::edit_page(&config, &id);
+                }
+            }
+        },
         Action::View => {
             let mut siv = Cursive::default();
             siv.set_user_data(config);
