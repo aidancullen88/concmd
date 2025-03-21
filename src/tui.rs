@@ -61,6 +61,6 @@ pub fn display(pick_page_ui: &mut Cursive) {
     if let Some(id) = pick_page_ui.user_data::<String>() {
         actions::edit_page(&config, id);
     } else {
-        panic!("Cursive should always return an ID as user data by the time it has exited")
+        std::process::exit(1)
     }
 }

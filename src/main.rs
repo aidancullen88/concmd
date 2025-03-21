@@ -82,7 +82,7 @@ where
 {
     let s: Option<String> = Deserialize::deserialize(deserializer)?;
     if let Some(s) = s {
-        return Ok(Some(expanduser::expanduser(s).map_err(D::Error::custom)?))
+        return Ok(Some(expanduser::expanduser(s).map_err(D::Error::custom)?));
     }
 
     Ok(None)
@@ -93,7 +93,7 @@ where
     D: Deserializer<'de>,
 {
     let s: String = Deserialize::deserialize(deserializer)?;
-        expanduser::expanduser(s).map_err(D::Error::custom)
+    expanduser::expanduser(s).map_err(D::Error::custom)
 }
 
 fn main() {
@@ -111,7 +111,7 @@ fn main() {
                     actions::edit_page(&config, &id);
                 }
             }
-        },
+        }
         Action::View => {
             let mut siv = Cursive::default();
             siv.set_user_data(config);
