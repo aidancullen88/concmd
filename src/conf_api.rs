@@ -1,4 +1,4 @@
-use anyhow::{Ok, Result};
+use anyhow::{anyhow, Ok, Result};
 use reqwest::blocking;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -16,10 +16,14 @@ struct PageResults {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Page {
-    pub id: String,
+    pub id: Option<String>,
     pub title: String,
     status: String,
-    pub version: PageVersion,
+    pub version: Option<PageVersion>,
+    #[serde(rename = "spaceId")]
+    space_id: Option<String>,
+    #[serde(rename = "parentId")]
+    parent_id: Option<String>,
     body: Body,
 }
 
@@ -60,6 +64,22 @@ impl Name for Page {
 }
 
 impl Page {
+    // Constructor used when uploading a completely new page
+    pub fn new(title: String, space_id: String, parent_id: String) -> Page {
+        let body = Body::Upload(Storage {
+            value: "placeholder test: replace".to_string(),
+            representation: "storage".to_string(),
+        });
+        return Page {
+            id: None,
+            title,
+            status: "current".to_string(),
+            version: None,
+            space_id: Some(space_id),
+            parent_id: Some(parent_id),
+            body,
+        };
+    }
     // Getter and setter for body to allow for download and upload in the same struct.
     // Confluence expects slightly different structure for upload than what it gives
     // for download. This is abstracted away here to make constructing the upload json
@@ -103,15 +123,42 @@ impl Page {
     }
 
     pub fn update_page_by_id(&mut self, api: &Api) -> Result<blocking::Response> {
-        self.version.number += 1;
+        self.version
+            .as_mut()
+            .ok_or(anyhow!(
+                "Page without version information cannot be updated"
+            ))?
+            .number += 1;
+        // match &mut self.version {
+        //     Some(version) => version.number += 1,
+        //     None => {
+        //         return Err(anyhow!(
+        //             "Page without version information cannot be updated"
+        //         ))
+        //     }
+        // }
         let serialised_body = serde_json::to_string(&self)?;
+        let current_id = self
+            .id
+            .as_ref()
+            .ok_or(anyhow!("Page without an ID cannot be updated"))?;
         let resp = send_request(
             api,
             RequestType::Put(serialised_body),
             format!(
                 "https://{}/wiki/api/v2/pages/{}",
-                api.confluence_domain, self.id
+                api.confluence_domain, current_id
             ),
+        )?;
+        Ok(resp)
+    }
+
+    pub fn create_page(&mut self, api: &Api) -> Result<blocking::Response> {
+        let serialised_body = serde_json::to_string(&self)?;
+        let resp = send_request(
+            api,
+            RequestType::Post(serialised_body),
+            format!("https://{}/wiki/api/v2/pages", api.confluence_domain),
         )?;
         Ok(resp)
     }
@@ -139,7 +186,7 @@ struct SpaceResults {
 #[derive(Deserialize, Debug)]
 pub struct Space {
     pub id: String,
-    // key: String,
+    pub key: String,
     pub name: String,
 }
 
@@ -176,6 +223,7 @@ fn send_request(api: &Api, method: RequestType, url: String) -> Result<blocking:
     let generic_client = match method {
         RequestType::Get => client.get(url),
         RequestType::Put(body) => client.put(url).body(body),
+        RequestType::Post(body) => client.post(url).body(body),
     };
     let resp = generic_client
         .basic_auth(&api.username, Some(&api.token))
@@ -184,9 +232,37 @@ fn send_request(api: &Api, method: RequestType, url: String) -> Result<blocking:
     Ok(resp)
 }
 
+#[derive(Deserialize, Debug)]
+struct RootPageContainer {
+    results: Vec<RootPage>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct RootPage {
+    pub id: String,
+    pub title: String,
+}
+
+impl RootPage {
+    pub fn get_root_pages(api: &Api, space_id: &String) -> Result<Vec<RootPage>> {
+        let resp = send_request(
+            api,
+            RequestType::Get,
+            format!(
+                "https://{}/wiki/api/v2/spaces/{}/pages?depth=root",
+                api.confluence_domain, space_id
+            ),
+        )?
+        .text()?;
+        let results = serde_json::from_str::<RootPageContainer>(&resp)?;
+        Ok(results.results)
+    }
+}
+
 enum RequestType {
     Get,
     Put(String),
+    Post(String),
 }
 
 impl fmt::Display for RequestType {
@@ -194,6 +270,7 @@ impl fmt::Display for RequestType {
         match *self {
             RequestType::Get => write!(f, "GET"),
             RequestType::Put(_) => write!(f, "PUT"),
+            RequestType::Post(_) => write!(f, "POST"),
         }
     }
 }

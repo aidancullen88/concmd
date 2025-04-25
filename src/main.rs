@@ -36,6 +36,14 @@ enum Action {
         id: Option<String>,
     },
     View,
+    New {
+        #[arg(long, short)]
+        path: PathBuf,
+        #[arg(long, short)]
+        title: String,
+        #[arg(long, short)]
+        edit: bool,
+    },
 }
 
 // Config structure. Note deserialize_with for save_location, see fn
@@ -101,21 +109,45 @@ fn main() {
 
     let cli = Args::parse();
 
-    match &cli.action {
+    match cli.action {
         Action::Edit { id, last } => {
-            if *last {
-                actions::edit_last_page(&config)
+            if last {
+                match actions::edit_last_page(&config) {
+                    Ok(_) => (),
+                    Err(e) => println!("ERROR: {}", e),
+                };
             } else {
                 // ID will always be present here, but check is required
                 if let Some(id) = id {
-                    actions::edit_page(&config, &id);
+                    match actions::edit_id(&config, &id) {
+                        Ok(_) => (),
+                        Err(e) => println!("ERROR: {}", e),
+                    };
                 }
             }
         }
         Action::View => {
             let mut siv = Cursive::default();
             siv.set_user_data(config);
-            crate::tui::display(&mut siv)
+            match crate::tui::display(&mut siv) {
+                Ok(_) => (),
+                Err(e) => println!("ERROR: {}", e),
+            }
+        }
+        Action::New { path, title, edit } => {
+            let expanded_path =
+                match expanduser::expanduser(path.to_str().expect("Path should always be unicode"))
+                {
+                    Ok(ex_path) => ex_path,
+                    Err(_) => {
+                        println!("The provided path is not valid");
+                        return;
+                    }
+                };
+            match actions::create_new_page(&config, &edit, &expanded_path, title) {
+                Ok(_) => (),
+                Err(e) => println!("ERROR: {}", e),
+            };
         }
     }
 }
