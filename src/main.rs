@@ -111,26 +111,32 @@ fn main() {
 
     match cli.action {
         Action::Edit { id, last } => {
-            if last {
-                match actions::edit_last_page(&config) {
-                    Ok(_) => (),
-                    Err(e) => println!("ERROR: {}", e),
-                };
+            let result = if last {
+                actions::edit_last_page(&config)
             } else {
                 // ID will always be present here, but check is required
                 if let Some(id) = id {
-                    match actions::edit_id(&config, &id) {
-                        Ok(_) => (),
-                        Err(e) => println!("ERROR: {}", e),
-                    };
+                    actions::edit_id(&config, &id)
+                } else {
+                    panic!("ID cannot be missing if last is false!")
                 }
+            };
+            match result {
+                Ok(_) => println!("Page edited successfully!"),
+                Err(e) if e.to_string() == "ERR_USER_CANCEL" => {
+                    println!("Exited without saving changes")
+                }
+                Err(e) => println!("ERROR: {}", e),
             }
         }
         Action::View => {
             let mut siv = Cursive::default();
             siv.set_user_data(config);
             match crate::tui::display(&mut siv) {
-                Ok(_) => (),
+                Ok(_) => println!("Page edited successfully"),
+                Err(e) if e.to_string() == "ERR_USER_CANCEL" => {
+                    println!("Exited without saving changes")
+                }
                 Err(e) => println!("ERROR: {}", e),
             }
         }
@@ -145,7 +151,7 @@ fn main() {
                     }
                 };
             match actions::create_new_page(&config, &edit, &expanded_path, title) {
-                Ok(_) => (),
+                Ok(_) => println!("New page successfully created!"),
                 Err(e) => println!("ERROR: {}", e),
             };
         }

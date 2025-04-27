@@ -5,6 +5,7 @@ use std::fmt;
 
 use crate::Api;
 
+// Used for generic functions over pages and spaces for the UI rendering
 pub trait Name {
     fn get_name(&self) -> String;
 }
@@ -67,7 +68,9 @@ impl Page {
     // Constructor used when uploading a completely new page
     pub fn new(title: String, space_id: String, parent_id: String) -> Page {
         let body = Body::Upload(Storage {
-            value: "placeholder test: replace".to_string(),
+            // The body is replaced by the serialised body later, so add a placeholder
+            // for now
+            value: "PLACEHOLDER".to_string(),
             representation: "storage".to_string(),
         });
         return Page {
@@ -122,7 +125,7 @@ impl Page {
         Ok(serde_json::from_str::<Page>(&resp)?)
     }
 
-    pub fn update_page_by_id(&mut self, api: &Api) -> Result<blocking::Response> {
+    pub fn update_page_by_id(&mut self, api: &Api) -> Result<Page> {
         self.version
             .as_mut()
             .ok_or(anyhow!(
@@ -150,17 +153,35 @@ impl Page {
                 api.confluence_domain, current_id
             ),
         )?;
-        Ok(resp)
+        match resp.status().as_u16() {
+            200 => return Ok(serde_json::from_str(&resp.text()?)?),
+            _ => {
+                return Err(anyhow!(
+                    "Publishing failed with error: {}",
+                    resp.text()
+                        .expect("Error response should be convertable to text")
+                ))
+            }
+        }
     }
 
-    pub fn create_page(&mut self, api: &Api) -> Result<blocking::Response> {
+    pub fn create_page(&mut self, api: &Api) -> Result<Page> {
         let serialised_body = serde_json::to_string(&self)?;
         let resp = send_request(
             api,
             RequestType::Post(serialised_body),
             format!("https://{}/wiki/api/v2/pages", api.confluence_domain),
         )?;
-        Ok(resp)
+        match resp.status().as_u16() {
+            200 => return Ok(serde_json::from_str(&resp.text()?)?),
+            _ => {
+                return Err(anyhow!(
+                    "Publishing failed with error: {}",
+                    resp.text()
+                        .expect("Error response should be convertable to text")
+                ))
+            }
+        }
     }
 
     pub fn get_pages(api: &Api, space_id: &str) -> Result<Vec<Page>> {
