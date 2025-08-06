@@ -86,11 +86,16 @@ fn edit_page(config: &Config, page: &mut Page) -> Result<Page> {
     )?;
     open_editor(&file_path, &config.editor);
     // Wait here for editor to close
-    print!("Publish page: y/n?: ");
-    let user_input: String = text_io::read!("{}\n");
-    match user_input.as_str() {
-        "y" | "Y" | "yes" | "Yes" => upload_page(&config.api, page, &file_path),
-        _ => Err(anyhow!("ERR_USER_CANCEL")),
+    match config.auto_sync {
+        Some(sync) if sync == true => upload_page(&config.api, page, &file_path),
+        _ => {
+            print!("Publish page: y/n?: ");
+            let user_input: String = text_io::read!("{}\n");
+            match user_input.as_str() {
+                "y" | "Y" | "yes" | "Yes" => upload_page(&config.api, page, &file_path),
+                _ => Err(anyhow!("ERR_USER_CANCEL")),
+            }
+        }
     }
 }
 

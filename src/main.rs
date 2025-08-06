@@ -53,6 +53,7 @@ struct Config {
     save_location: PathBuf,
     #[serde(default, deserialize_with = "from_tilde_path_optional")]
     history_location: Option<PathBuf>,
+    auto_sync: Option<bool>,
     api: Api,
     editor: Option<Editor>,
 }
@@ -124,7 +125,7 @@ fn main() {
             match result {
                 Ok(_) => println!("Page edited successfully!"),
                 Err(e) if e.to_string() == "ERR_USER_CANCEL" => {
-                    println!("Exited without saving changes")
+                    println!("Exited without syncing changes")
                 }
                 Err(e) => println!("ERROR: {}", e),
             }
