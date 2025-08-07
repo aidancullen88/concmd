@@ -26,9 +26,7 @@ pub fn edit_id(config: &Config, id: &String) -> Result<()> {
     let mut page = Page::get_page_by_id(&config.api, id)?;
     edit_page(config, &mut page)?;
 
-    let history_path = get_history_path_or_default(config);
-    std::fs::write(history_path, id)?;
-    Ok(())
+    update_last_edited_page(config, id)
 }
 
 pub fn edit_last_page(config: &Config) -> Result<()> {
@@ -70,7 +68,11 @@ pub fn create_new_page(
     if *should_edit == true {
         edit_page(config, &mut uploaded_page)?;
     };
-    Ok(())
+    if let Some(id) = uploaded_page.id {
+        update_last_edited_page(config, &id)
+    } else {
+        Err(anyhow!("New page was created without id"))
+    }
 }
 
 // Worker functions
@@ -111,6 +113,12 @@ fn save_page_to_file(location: &PathBuf, id: &String, body: &String) -> Result<P
     // let body_table_replaced = html2md::parse_html(body);
     file.write_all(converted_body.as_bytes())?;
     Ok(file_path)
+}
+
+fn update_last_edited_page(config: &Config, id: &String) -> Result<()> {
+    let history_path = get_history_path_or_default(config);
+    std::fs::write(history_path, id)?;
+    Ok(())
 }
 
 fn convert_html_to_md(body: &String) -> Result<String> {
