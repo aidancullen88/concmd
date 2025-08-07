@@ -2,8 +2,8 @@ mod actions;
 mod conf_api;
 mod tui;
 
+use actions::view_pages;
 use anyhow::{Context, Result};
-use cursive::Cursive;
 use serde::{de::Error, Deserialize, Deserializer};
 use std::fs::File;
 use std::{
@@ -130,17 +130,13 @@ fn main() {
                 Err(e) => println!("ERROR: {}", e),
             }
         }
-        Action::View => {
-            let mut siv = Cursive::default();
-            siv.set_user_data(config);
-            match crate::tui::display(&mut siv) {
-                Ok(_) => println!("Page edited successfully"),
-                Err(e) if e.to_string() == "ERR_USER_CANCEL" => {
-                    println!("Exited without saving changes")
-                }
-                Err(e) => println!("ERROR: {}", e),
+        Action::View => match view_pages(&config) {
+            Ok(_) => println!("Page edited successfully!"),
+            Err(e) if e.to_string() == "ERR_USER_CANCEL" => {
+                println!("Exited without saving changes")
             }
-        }
+            Err(e) => println!("ERROR: {}", e),
+        },
         Action::New { path, title, edit } => {
             let expanded_path = match expanduser::expanduser(path) {
                 Ok(ex_path) => ex_path,

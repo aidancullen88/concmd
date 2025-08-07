@@ -73,7 +73,7 @@ impl Page {
             value: "PLACEHOLDER".to_string(),
             representation: "storage".to_string(),
         });
-        return Page {
+        Page {
             id: None,
             title,
             status: "current".to_string(),
@@ -81,7 +81,7 @@ impl Page {
             space_id: Some(space_id),
             parent_id: Some(parent_id),
             body,
-        };
+        }
     }
     // Getter and setter for body to allow for download and upload in the same struct.
     // Confluence expects slightly different structure for upload than what it gives
@@ -154,14 +154,12 @@ impl Page {
             ),
         )?;
         match resp.status().as_u16() {
-            200 => return Ok(serde_json::from_str(&resp.text()?)?),
-            _ => {
-                return Err(anyhow!(
-                    "Publishing failed with error: {}",
-                    resp.text()
-                        .expect("Error response should be convertable to text")
-                ))
-            }
+            200 => Ok(serde_json::from_str(&resp.text()?)?),
+            _ => Err(anyhow!(
+                "Publishing failed with error: {}",
+                resp.text()
+                    .expect("Error response should be convertable to text")
+            )),
         }
     }
 
@@ -173,14 +171,12 @@ impl Page {
             format!("https://{}/wiki/api/v2/pages", api.confluence_domain),
         )?;
         match resp.status().as_u16() {
-            200 => return Ok(serde_json::from_str(&resp.text()?)?),
-            _ => {
-                return Err(anyhow!(
-                    "Publishing failed with error: {}",
-                    resp.text()
-                        .expect("Error response should be convertable to text")
-                ))
-            }
+            200 => Ok(serde_json::from_str(&resp.text()?)?),
+            _ => Err(anyhow!(
+                "Publishing failed with error: {}",
+                resp.text()
+                    .expect("Error response should be convertable to text")
+            )),
         }
     }
 

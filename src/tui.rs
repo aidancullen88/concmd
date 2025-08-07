@@ -1,4 +1,3 @@
-use crate::actions;
 use crate::conf_api::{Name, Page, Space};
 use crate::Config;
 
@@ -6,7 +5,7 @@ use anyhow::{anyhow, Ok, Result};
 use cursive::views::{Dialog, SelectView};
 use cursive::{Cursive, CursiveExt};
 
-pub fn display(pick_page_ui: &mut Cursive) -> Result<()> {
+pub fn display(pick_page_ui: &mut Cursive) -> Result<String> {
     /*
      * Generic function to build the display lists from returned lists
      * As long as the api return type impls Name, we can build a display
@@ -67,12 +66,11 @@ pub fn display(pick_page_ui: &mut Cursive) -> Result<()> {
     let user_data = pick_page_ui.user_data::<String>();
 
     if let Some(id) = user_data {
-        actions::edit_id(&config, id)?;
-        Ok(())
+        Ok(id.to_string())
     } else {
-        return Err(anyhow!(
+        Err(anyhow!(
             "No ID present in user data from the UI, found {:?} instead",
             user_data
-        ));
+        ))
     }
 }

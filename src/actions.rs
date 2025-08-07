@@ -4,12 +4,13 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::usize;
 
 use crate::conf_api::{Page, RootPage, Space};
 use crate::Api;
 use crate::Config;
 use crate::Editor;
+
+use cursive::Cursive;
 
 // Interface
 
@@ -32,15 +33,25 @@ pub fn edit_id(config: &Config, id: &String) -> Result<()> {
 pub fn edit_last_page(config: &Config) -> Result<()> {
     let history_path = get_history_path_or_default(config);
 
-    if !std::fs::metadata(&history_path).is_ok() {
+    if std::fs::metadata(&history_path).is_err() {
         return Err(anyhow!("Directory for history file does not exist"));
     }
 
     let history_id = std::fs::read(history_path)?;
     let id_string = String::from_utf8(history_id)?;
 
-    edit_id(&config, &id_string.trim().to_string())?;
+    edit_id(config, &id_string.trim().to_string())?;
     Ok(())
+}
+
+pub fn view_pages(config: &Config) -> Result<()> {
+    let mut siv = Cursive::default();
+    siv.set_user_data(config.clone());
+    let id = match crate::tui::display(&mut siv) {
+        Ok(id) => id,
+        Err(e) => return Err(e),
+    };
+    edit_id(config, &id)
 }
 
 pub fn create_new_page(
@@ -65,7 +76,7 @@ pub fn create_new_page(
     // Make the new page struct to upload and then upload with the file at the provided path
     let mut new_page = Page::new(title, user_selection.id.clone(), root_page_id.clone());
     let mut uploaded_page = upload_page(&config.api, &mut new_page, page_path)?;
-    if *should_edit == true {
+    if *should_edit {
         edit_page(config, &mut uploaded_page)?;
     };
     if let Some(id) = uploaded_page.id {
@@ -80,8 +91,7 @@ pub fn create_new_page(
 fn edit_page(config: &Config, page: &mut Page) -> Result<Page> {
     let file_path = save_page_to_file(
         &config.save_location,
-        &page
-            .id
+        page.id
             .as_ref()
             .expect("Editing page should always have ID"),
         page.get_body(),
@@ -89,7 +99,7 @@ fn edit_page(config: &Config, page: &mut Page) -> Result<Page> {
     open_editor(&file_path, &config.editor);
     // Wait here for editor to close
     match config.auto_sync {
-        Some(sync) if sync == true => upload_page(&config.api, page, &file_path),
+        Some(true) => upload_page(&config.api, page, &file_path),
         _ => {
             print!("Publish page: y/n?: ");
             let user_input: String = text_io::read!("{}\n");
@@ -101,7 +111,7 @@ fn edit_page(config: &Config, page: &mut Page) -> Result<Page> {
     }
 }
 
-fn save_page_to_file(location: &PathBuf, id: &String, body: &String) -> Result<PathBuf> {
+fn save_page_to_file(location: &Path, id: &String, body: &String) -> Result<PathBuf> {
     let converted_body = convert_html_to_md(body)?;
 
     let mut file_path = location.to_path_buf();
@@ -199,7 +209,7 @@ fn get_space_list(api: &Api) -> Result<Vec<Space>> {
     Space::get_spaces(api)
 }
 
-fn user_choose_space(space_list: &Vec<Space>) -> &Space {
+fn user_choose_space(space_list: &[Space]) -> &Space {
     println!("Available Spaces:");
     for (i, space) in space_list.iter().enumerate() {
         println!(
@@ -226,6 +236,5 @@ fn user_choose_space(space_list: &Vec<Space>) -> &Space {
     }
     space_list
         .get(selection - 1)
-        .clone()
         .expect("Index is bounds checked above")
 }
