@@ -54,27 +54,15 @@ pub fn view_pages(config: &Config) -> Result<()> {
     edit_id(config, &id)
 }
 
-pub fn create_new_page(
+pub fn upload_existing_page(
     config: &Config,
     should_edit: &bool,
     page_path: &PathBuf,
     title: String,
 ) -> Result<()> {
-    // TODO: Instead of just trying to get the root page, give a list of folders or the root to
-    // choose from
-    let space_list = get_space_list(&config.api)?;
-    let user_selection = user_choose_space(&space_list);
-
-    // The root page of the space is always named the same as the space. Get all the root pages
-    // (usually only a few) and find the one with the same name
-    let root_pages = &RootPage::get_root_pages(&config.api, &user_selection.id)?;
-    let root_page_id = &root_pages
-        .iter()
-        .find(|x| x.title == user_selection.name)
-        .expect("Should always be a root page with name matching the space")
-        .id;
+    let (root_page_id, user_space_id) = select_root_page(config)?;
     // Make the new page struct to upload and then upload with the file at the provided path
-    let mut new_page = Page::new(title, user_selection.id.clone(), root_page_id.clone());
+    let mut new_page = Page::new(title, user_space_id, root_page_id);
     let mut uploaded_page = upload_page(&config.api, &mut new_page, page_path)?;
     if *should_edit {
         edit_page(config, &mut uploaded_page)?;
@@ -86,7 +74,33 @@ pub fn create_new_page(
     }
 }
 
+pub fn create_new_page(config: &Config, should_edit: &bool, title: String) -> Result<()> {
+    let (root_page_id, user_space_id) = select_root_page(config)?;
+    let page_path = create_local_file(config, &title)?;
+
+    let mut new_page = Page::new(title, user_space_id, root_page_id);
+    let mut uploaded_page = upload_page(&config.api, &mut new_page, &page_path)?;
+    if *should_edit {
+        edit_page(config, &mut uploaded_page)?;
+    };
+    if let Some(id) = uploaded_page.id {
+        update_last_edited_page(config, &id)
+    } else {
+        Err(anyhow!("New page was created without id"))
+    }
+}
+
 // Worker functions
+
+fn create_local_file(config: &Config, title: &String) -> Result<PathBuf> {
+    let mut new_file_path = config.save_location.to_path_buf();
+    new_file_path.push(title);
+    new_file_path.set_extension("md");
+    match File::create_new(&new_file_path) {
+        Ok(_) => Ok(new_file_path),
+        Err(e) => Err(anyhow!(e)),
+    }
+}
 
 fn edit_page(config: &Config, page: &mut Page) -> Result<Page> {
     let file_path = save_page_to_file(
@@ -203,6 +217,25 @@ fn get_history_path_or_default(config: &Config) -> PathBuf {
         Some(path) => Path::new(path).join("history.txt"),
         None => config.save_location.clone().join("history.txt"),
     }
+}
+
+fn select_root_page(config: &Config) -> Result<(String, String)> {
+    // TODO: Instead of just trying to get the root page, give a list of folders or the root to
+    // choose from
+    let space_list = get_space_list(&config.api)?;
+    let user_selection = user_choose_space(&space_list);
+    let user_space_id = user_selection.id.to_owned();
+
+    // The root page of the space is always named the same as the space. Get all the root pages
+    // (usually only a few) and find the one with the same name
+    let root_pages = &RootPage::get_root_pages(&config.api, &user_selection.id)?;
+    let root_page_id = root_pages
+        .iter()
+        .find(|x| x.title == user_selection.name)
+        .expect("Should always be a root page with name matching the space")
+        .id
+        .clone();
+    Ok((root_page_id, user_space_id))
 }
 
 fn get_space_list(api: &Api) -> Result<Vec<Space>> {

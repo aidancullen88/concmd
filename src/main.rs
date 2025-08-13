@@ -36,9 +36,15 @@ enum Action {
         id: Option<String>,
     },
     View,
-    New {
+    Upload {
         #[arg(long, short)]
         path: String,
+        #[arg(long, short)]
+        title: String,
+        #[arg(long, short)]
+        edit: bool,
+    },
+    New {
         #[arg(long, short)]
         title: String,
         #[arg(long, short)]
@@ -137,7 +143,7 @@ fn main() {
             }
             Err(e) => println!("ERROR: {}", e),
         },
-        Action::New { path, title, edit } => {
+        Action::Upload { path, title, edit } => {
             let expanded_path = match expanduser::expanduser(path) {
                 Ok(ex_path) => ex_path,
                 Err(_) => {
@@ -145,11 +151,15 @@ fn main() {
                     return;
                 }
             };
-            match actions::create_new_page(&config, &edit, &expanded_path, title) {
+            match actions::upload_existing_page(&config, &edit, &expanded_path, title) {
                 Ok(_) => println!("New page successfully created!"),
                 Err(e) => println!("ERROR: {}", e),
             };
         }
+        Action::New { title, edit } => match actions::create_new_page(&config, &edit, title) {
+            Ok(_) => println!("New page successfully created!"),
+            Err(e) => println!("ERROR: {}", e),
+        },
     }
 }
 
