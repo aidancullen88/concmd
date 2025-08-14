@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Ok, Result};
+use anyhow::{anyhow, bail, Ok, Result};
 use reqwest::blocking;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -155,11 +155,11 @@ impl Page {
         )?;
         match resp.status().as_u16() {
             200 => Ok(serde_json::from_str(&resp.text()?)?),
-            _ => Err(anyhow!(
+            _ => bail!(
                 "Publishing failed with error: {}",
                 resp.text()
                     .expect("Error response should be convertable to text")
-            )),
+            ),
         }
     }
 
@@ -170,13 +170,13 @@ impl Page {
             RequestType::Post(serialised_body),
             format!("https://{}/wiki/api/v2/pages", api.confluence_domain),
         )?;
-        match resp.status().as_u16() {
-            200 => Ok(serde_json::from_str(&resp.text()?)?),
-            _ => Err(anyhow!(
-                "Publishing failed with error: {}",
-                resp.text()
-                    .expect("Error response should be convertable to text")
-            )),
+        match &resp.status().as_u16() {
+            c if *c < 300 => Ok(serde_json::from_str(&resp.text()?)?),
+            c if *c >= 400 => {
+                let error = serde_json::from_str::<GenericErrors>(&resp.text()?)?;
+                bail!(error.get_error())
+            }
+            _ => bail!("Unknown response: {}", resp.text()?),
         }
     }
 
@@ -192,6 +192,29 @@ impl Page {
         .text()?;
         let results = serde_json::from_str::<PageResults>(&resp)?;
         Ok(results.results)
+    }
+}
+
+#[derive(Deserialize, Debug)]
+struct GenericErrors {
+    errors: Vec<PageError>,
+}
+
+#[derive(Deserialize, Debug)]
+struct PageError {
+    // status: usize,
+    // code: String,
+    title: String,
+    // detail: Option<String>,
+}
+
+impl GenericErrors {
+    fn get_error(self) -> String {
+        self.errors
+            .into_iter()
+            .next()
+            .expect("Should always be at least one error object in list")
+            .title
     }
 }
 

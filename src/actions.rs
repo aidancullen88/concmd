@@ -1,7 +1,7 @@
-use anyhow::{anyhow, Result};
+use anyhow::{bail, Result};
 use core::panic;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -9,6 +9,7 @@ use crate::conf_api::{Page, RootPage, Space};
 use crate::Api;
 use crate::Config;
 use crate::Editor;
+use crate::UserErrors;
 
 use cursive::Cursive;
 
@@ -34,7 +35,7 @@ pub fn edit_last_page(config: &Config) -> Result<()> {
     let history_path = get_history_path_or_default(config);
 
     if std::fs::metadata(&history_path).is_err() {
-        return Err(anyhow!("Directory for history file does not exist"));
+        bail!("Directory for history file does not exist");
     }
 
     let history_id = std::fs::read(history_path)?;
@@ -70,7 +71,7 @@ pub fn upload_existing_page(
     if let Some(id) = uploaded_page.id {
         update_last_edited_page(config, &id)
     } else {
-        Err(anyhow!("New page was created without id"))
+        bail!("New page was created without id")
     }
 }
 
@@ -86,7 +87,7 @@ pub fn create_new_page(config: &Config, should_edit: &bool, title: String) -> Re
     if let Some(id) = uploaded_page.id {
         update_last_edited_page(config, &id)
     } else {
-        Err(anyhow!("New page was created without id"))
+        bail!("New page was created without id")
     }
 }
 
@@ -98,7 +99,11 @@ fn create_local_file(config: &Config, title: &String) -> Result<PathBuf> {
     new_file_path.set_extension("md");
     match File::create_new(&new_file_path) {
         Ok(_) => Ok(new_file_path),
-        Err(e) => Err(anyhow!(e)),
+        Err(e) => match e.kind() {
+            io::ErrorKind::NotFound => bail!(UserErrors::InvalidSavePath),
+            io::ErrorKind::AlreadyExists => bail!(UserErrors::TitleExists),
+            other => bail!(other),
+        },
     }
 }
 
@@ -119,7 +124,7 @@ fn edit_page(config: &Config, page: &mut Page) -> Result<Page> {
             let user_input: String = text_io::read!("{}\n");
             match user_input.as_str() {
                 "y" | "Y" | "yes" | "Yes" => upload_page(&config.api, page, &file_path),
-                _ => Err(anyhow!("ERR_USER_CANCEL")),
+                _ => bail!("USER_CANCEL"),
             }
         }
     }

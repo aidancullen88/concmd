@@ -111,6 +111,27 @@ where
     expanduser::expanduser(s).map_err(D::Error::custom)
 }
 
+#[derive(Debug)]
+enum UserErrors {
+    InvalidSavePath,
+    TitleExists,
+}
+
+impl std::error::Error for UserErrors {}
+
+impl std::fmt::Display for UserErrors {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UserErrors::InvalidSavePath => {
+                write!(f, "The save_location defined in the config is invalid. Please edit the config and try again")
+            }
+            UserErrors::TitleExists => {
+                write!(f, "The title chosen already exists. Please choose another title and try again, or use 'concmd view' to find and edit the existing page")
+            }
+        }
+    }
+}
+
 fn main() {
     let config = get_config();
 
@@ -130,7 +151,7 @@ fn main() {
             };
             match result {
                 Ok(_) => println!("Page edited successfully!"),
-                Err(e) if e.to_string() == "ERR_USER_CANCEL" => {
+                Err(e) if e.to_string() == "USER_CANCEL" => {
                     println!("Exited without syncing changes")
                 }
                 Err(e) => println!("ERROR: {}", e),
@@ -138,7 +159,7 @@ fn main() {
         }
         Action::View => match view_pages(&config) {
             Ok(_) => println!("Page edited successfully!"),
-            Err(e) if e.to_string() == "ERR_USER_CANCEL" => {
+            Err(e) if e.to_string() == "USER_CANCEL" => {
                 println!("Exited without saving changes")
             }
             Err(e) => println!("ERROR: {}", e),
@@ -153,11 +174,17 @@ fn main() {
             };
             match actions::upload_existing_page(&config, &edit, &expanded_path, title) {
                 Ok(_) => println!("New page successfully created!"),
+                Err(e) if e.to_string() == "USER_CANCEL" => {
+                    println!("Exited without saving changes")
+                }
                 Err(e) => println!("ERROR: {}", e),
             };
         }
         Action::New { title, edit } => match actions::create_new_page(&config, &edit, title) {
             Ok(_) => println!("New page successfully created!"),
+            Err(e) if e.to_string() == "USER_CANCEL" => {
+                println!("Exited without saving changes")
+            }
             Err(e) => println!("ERROR: {}", e),
         },
     }
