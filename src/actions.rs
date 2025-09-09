@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use core::panic;
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -9,7 +9,6 @@ use crate::conf_api::{Page, RootPage, Space};
 use crate::Api;
 use crate::Config;
 use crate::Editor;
-use crate::UserErrors;
 
 use cursive::Cursive;
 
@@ -28,7 +27,7 @@ pub fn edit_id(config: &Config, id: &String) -> Result<()> {
     let mut page = Page::get_page_by_id(&config.api, id)?;
     edit_page(config, &mut page)?;
 
-    update_last_edited_page(config, id)
+    update_edited_history(config, id)
 }
 
 pub fn edit_last_page(config: &Config) -> Result<()> {
@@ -64,12 +63,12 @@ pub fn upload_existing_page(
     let (root_page_id, user_space_id) = select_root_page(config)?;
     // Make the new page struct to upload and then upload with the file at the provided path
     let mut new_page = Page::new(title, user_space_id, root_page_id);
-    let mut uploaded_page = upload_page(&config.api, &mut new_page, page_path)?;
+    let mut uploaded_page = upload_page(&config.api, &mut new_page, Some(page_path))?;
     if *should_edit {
         edit_page(config, &mut uploaded_page)?;
     };
     if let Some(id) = uploaded_page.id {
-        update_last_edited_page(config, &id)
+        update_edited_history(config, &id)
     } else {
         bail!("New page was created without id")
     }
@@ -77,15 +76,15 @@ pub fn upload_existing_page(
 
 pub fn create_new_page(config: &Config, should_edit: &bool, title: String) -> Result<()> {
     let (root_page_id, user_space_id) = select_root_page(config)?;
-    let page_path = create_local_file(config, &title)?;
+    // let page_path = create_local_file(config, &title)?;
 
     let mut new_page = Page::new(title, user_space_id, root_page_id);
-    let mut uploaded_page = upload_page(&config.api, &mut new_page, &page_path)?;
+    let mut uploaded_page = upload_page(&config.api, &mut new_page, None)?;
     if *should_edit {
         edit_page(config, &mut uploaded_page)?;
     };
     if let Some(id) = uploaded_page.id {
-        update_last_edited_page(config, &id)
+        update_edited_history(config, &id)
     } else {
         bail!("New page was created without id")
     }
@@ -93,19 +92,19 @@ pub fn create_new_page(config: &Config, should_edit: &bool, title: String) -> Re
 
 // Worker functions
 
-fn create_local_file(config: &Config, title: &String) -> Result<PathBuf> {
-    let mut new_file_path = config.save_location.to_path_buf();
-    new_file_path.push(title);
-    new_file_path.set_extension("md");
-    match File::create_new(&new_file_path) {
-        Ok(_) => Ok(new_file_path),
-        Err(e) => match e.kind() {
-            io::ErrorKind::NotFound => bail!(UserErrors::InvalidSavePath),
-            io::ErrorKind::AlreadyExists => bail!(UserErrors::TitleExists),
-            other => bail!(other),
-        },
-    }
-}
+// fn create_local_file(config: &Config, title: &String) -> Result<PathBuf> {
+//     let mut new_file_path = config.save_location.to_path_buf();
+//     new_file_path.push(title);
+//     new_file_path.set_extension("md");
+//     match File::create_new(&new_file_path) {
+//         Ok(_) => Ok(new_file_path),
+//         Err(e) => match e.kind() {
+//             io::ErrorKind::NotFound => bail!(UserErrors::InvalidSavePath),
+//             io::ErrorKind::AlreadyExists => bail!(UserErrors::TitleExists),
+//             other => bail!(other),
+//         },
+//     }
+// }
 
 fn edit_page(config: &Config, page: &mut Page) -> Result<Page> {
     let file_path = save_page_to_file(
@@ -118,12 +117,12 @@ fn edit_page(config: &Config, page: &mut Page) -> Result<Page> {
     open_editor(&file_path, &config.editor);
     // Wait here for editor to close
     match config.auto_sync {
-        Some(true) => upload_page(&config.api, page, &file_path),
+        Some(true) => upload_page(&config.api, page, Some(&file_path)),
         _ => {
             print!("Publish page: y/n?: ");
             let user_input: String = text_io::read!("{}\n");
             match user_input.as_str() {
-                "y" | "Y" | "yes" | "Yes" => upload_page(&config.api, page, &file_path),
+                "y" | "Y" | "yes" | "Yes" => upload_page(&config.api, page, Some(&file_path)),
                 _ => bail!("USER_CANCEL"),
             }
         }
@@ -144,7 +143,7 @@ fn save_page_to_file(location: &Path, id: &String, body: &String) -> Result<Path
     Ok(file_path)
 }
 
-fn update_last_edited_page(config: &Config, id: &String) -> Result<()> {
+fn update_edited_history(config: &Config, id: &String) -> Result<()> {
     let history_path = get_history_path_or_default(config);
     std::fs::write(history_path, id)?;
     Ok(())
@@ -166,7 +165,7 @@ fn convert_html_to_md(body: &String) -> Result<String> {
 
 fn convert_md_to_html(body: &String) -> Result<String> {
     let mut pandoc = pandoc::new();
-    pandoc.set_input_format(pandoc::InputFormat::Markdown, vec![]);
+    pandoc.set_input_format(pandoc::InputFormat::MarkdownGithub, vec![]);
     pandoc.set_input(pandoc::InputKind::Pipe(body.to_string()));
     pandoc.set_output_format(pandoc::OutputFormat::Html, vec![]);
     pandoc.set_output(pandoc::OutputKind::Pipe);
@@ -200,12 +199,14 @@ fn open_editor(path: &PathBuf, editor: &Option<Editor>) {
     };
 }
 
-fn upload_page(api: &Api, page: &mut Page, file_path: &PathBuf) -> Result<Page> {
-    let mut file = File::open(file_path)?;
-    let mut unescaped_body = String::new();
-    file.read_to_string(&mut unescaped_body)?;
-    // Replace the existing page body with the converted body
-    page.set_body(convert_md_to_html(&unescaped_body)?);
+fn upload_page(api: &Api, page: &mut Page, file_path: Option<&PathBuf>) -> Result<Page> {
+    if let Some(file_path) = file_path {
+        let mut file = File::open(file_path)?;
+        let mut unescaped_body = String::new();
+        file.read_to_string(&mut unescaped_body)?;
+        // Replace the existing page body with the converted body
+        page.set_body(convert_md_to_html(&unescaped_body)?);
+    };
     println!("Page uploading...");
     // "Hack" to check if we are updating a page or making a new one. Should be an explict enum
     // but...

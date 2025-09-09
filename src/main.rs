@@ -53,6 +53,8 @@ enum Action {
 }
 
 // Config structure. Note deserialize_with for save_location, see fn
+// Deserialisation for history location requires a different function to deal with the optional
+// case
 #[derive(Deserialize, Debug, Clone)]
 struct Config {
     #[serde(deserialize_with = "from_tilde_path")]
@@ -91,6 +93,15 @@ struct Editor {
 
 // Implements a custom deserializer for save_location that automatically
 // expands the tilde to the users home directory (unix only)
+fn from_tilde_path<'de, D>(deserializer: D) -> Result<PathBuf, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s: String = Deserialize::deserialize(deserializer)?;
+    expanduser::expanduser(s).map_err(D::Error::custom)
+}
+
+// Same as the above deserialiser but handles the optional case for history_location
 fn from_tilde_path_optional<'de, D>(deserializer: D) -> Result<Option<PathBuf>, D::Error>
 where
     D: Deserializer<'de>,
@@ -103,37 +114,36 @@ where
     Ok(None)
 }
 
-fn from_tilde_path<'de, D>(deserializer: D) -> Result<PathBuf, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s: String = Deserialize::deserialize(deserializer)?;
-    expanduser::expanduser(s).map_err(D::Error::custom)
-}
-
-#[derive(Debug)]
-enum UserErrors {
-    InvalidSavePath,
-    TitleExists,
-}
-
-impl std::error::Error for UserErrors {}
-
-impl std::fmt::Display for UserErrors {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            UserErrors::InvalidSavePath => {
-                write!(f, "The save_location defined in the config is invalid. Please edit the config and try again")
-            }
-            UserErrors::TitleExists => {
-                write!(f, "The title chosen already exists. Please choose another title and try again, or use 'concmd view' to find and edit the existing page")
-            }
-        }
-    }
-}
+// Collects user errors that require creating a new file to be aborted
+// #[derive(Debug)]
+// enum UserErrors {
+//     InvalidSavePath,
+//     TitleExists,
+// }
+//
+// impl std::error::Error for UserErrors {}
+//
+// impl std::fmt::Display for UserErrors {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         match self {
+//             UserErrors::InvalidSavePath => {
+//                 write!(f, "The save_location defined in the config is invalid. Please edit the config and try again")
+//             }
+//             UserErrors::TitleExists => {
+//                 write!(f, "The title chosen already exists. Please choose another title and try again, or use 'concmd view' to find and edit the existing page")
+//             }
+//         }
+//     }
+// }
 
 fn main() {
-    let config = get_config();
+    let config = match get_config() {
+        Ok(c) => c,
+        Err(e) => {
+            println!("ERROR: Error fetching config: {}", e);
+            return;
+        }
+    };
 
     let cli = Args::parse();
 
@@ -180,19 +190,29 @@ fn main() {
                 Err(e) => println!("ERROR: {}", e),
             };
         }
-        Action::New { title, edit } => match actions::create_new_page(&config, &edit, title) {
-            Ok(_) => println!("New page successfully created!"),
-            Err(e) if e.to_string() == "USER_CANCEL" => {
-                println!("Exited without saving changes")
+        Action::New { title, edit } => {
+            match actions::create_new_page(&config, &edit, title.clone()) {
+                Ok(_) => println!("New page successfully created!"),
+                Err(e) if e.to_string() == "USER_CANCEL" => {
+                    println!("Exited without saving changes")
+                }
+                Err(e) if e.to_string().starts_with("A page with this title") => {
+                    println!(
+                        "ERROR: A page with title \"{}\" already exists in this space",
+                        title
+                    )
+                }
+                Err(e) => println!("ERROR: {}", e),
             }
-            Err(e) => println!("ERROR: {}", e),
-        },
+        }
     }
 }
 
-fn get_config() -> Config {
+// Helper function to add the home dir to the config path. Config is always expected to live in the
+// ~/.config/concmd directory.
+fn get_config() -> Result<Config> {
     let mut home_dir = home::home_dir().expect("home dir should always exist");
     home_dir.push(".config/concmd/config.toml");
 
-    Config::read_config(&home_dir).unwrap()
+    Config::read_config(&home_dir)
 }
