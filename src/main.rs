@@ -1,8 +1,8 @@
 mod actions;
+mod alt_tui;
 mod conf_api;
 mod tui;
 
-use actions::view_pages;
 use anyhow::{Context, Result};
 use serde::{de::Error, Deserialize, Deserializer};
 use std::fs::File;
@@ -167,10 +167,13 @@ fn main() {
                 Err(e) => println!("ERROR: {}", e),
             }
         }
-        Action::View => match view_pages(&config) {
+        Action::View => match actions::view_pages(&config) {
             Ok(_) => println!("Page edited successfully!"),
             Err(e) if e.to_string() == "USER_CANCEL" => {
                 println!("Exited without saving changes")
+            }
+            Err(e) if e.to_string() == "USER_APP_EXIT" => {
+                println!("Exited without selecting a page")
             }
             Err(e) => println!("ERROR: {}", e),
         },

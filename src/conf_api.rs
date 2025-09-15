@@ -15,7 +15,7 @@ struct PageResults {
     results: Vec<Page>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Page {
     pub id: Option<String>,
     pub title: String,
@@ -28,7 +28,7 @@ pub struct Page {
     body: Body,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(untagged)]
 enum Body {
     Download(PageBody),
@@ -36,23 +36,23 @@ enum Body {
     BulkFetch(BulkBody),
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct BulkBody {
     storage: Storage,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct PageBody {
     editor: Storage,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct Storage {
     value: String,
     representation: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct PageVersion {
     pub number: usize,
     pub message: Option<String>,
@@ -223,7 +223,7 @@ struct SpaceResults {
     results: Vec<Space>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Space {
     pub id: String,
     pub key: String,

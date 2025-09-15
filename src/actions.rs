@@ -6,11 +6,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::conf_api::{Page, RootPage, Space};
-use crate::Api;
 use crate::Config;
 use crate::Editor;
-
-use cursive::Cursive;
+use crate::{alt_tui, Api};
 
 // Interface
 
@@ -45,13 +43,20 @@ pub fn edit_last_page(config: &Config) -> Result<()> {
 }
 
 pub fn view_pages(config: &Config) -> Result<()> {
-    let mut siv = Cursive::default();
-    siv.set_user_data(config.clone());
-    let id = match crate::tui::display(&mut siv) {
-        Ok(id) => id,
-        Err(e) => return Err(e),
-    };
-    edit_id(config, &id)
+    // let mut siv = Cursive::default();
+    // siv.set_user_data(config.clone());
+    // let id = match crate::tui::display(&mut siv) {
+    //     Ok(id) => id,
+    //     Err(e) => return Err(e),
+    // };
+    // edit_id(config, &id)
+    let page = alt_tui::display(config)?;
+    edit_id(
+        config,
+        &page
+            .id
+            .expect("page coming from the UI should always have an ID"),
+    )
 }
 
 pub fn upload_existing_page(
