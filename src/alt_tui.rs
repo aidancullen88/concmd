@@ -1,7 +1,13 @@
+use std::io::stdout;
+
 use crate::conf_api::{Name, Page, Space};
 use crate::{actions, Config};
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use ratatui::crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+};
+use ratatui::crossterm::ExecutableCommand;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Style, Stylize};
 use ratatui::symbols::border;
@@ -105,6 +111,22 @@ impl App {
         }
         list_state.select_last();
     }
+
+    pub fn refresh_current_list(&mut self, config: &Config) -> Result<()> {
+        match self.current_pane {
+            CurrentPane::Pages => self.load_pages(
+                config,
+                &self
+                    .get_selected_space()
+                    .expect("If we're in the pages pane there must be a selected space")
+                    .id,
+            ),
+            CurrentPane::Spaces => {
+                self.space_list = actions::load_space_list(config)?;
+                Ok(())
+            }
+        }
+    }
 }
 
 // Represents all possible user actions in the app
@@ -115,6 +137,8 @@ enum Message {
     Back,
     Exit,
     Save,
+    ConfirmSave,
+    Refresh,
 }
 
 // Represents the current list the user is selecting
@@ -154,15 +178,21 @@ fn run(config: &Config, terminal: &mut DefaultTerminal, app: &mut App) -> Result
         let mut message = handle_events()?;
         // Messages can chain other messages (see Message::Select in update)
         while message.is_some() {
-            message = update(app, config, message.unwrap())?;
+            message = update(app, config, message.unwrap(), terminal)?;
         }
     }
     Ok(())
 }
 
-fn update(app: &mut App, config: &Config, message: Message) -> Result<Option<Message>> {
+fn update(
+    app: &mut App,
+    config: &Config,
+    message: Message,
+    terminal: &mut DefaultTerminal,
+) -> Result<Option<Message>> {
     match message {
         Message::Exit => {
+            // Reset the list state so that get_selected_page returns None while exiting
             app.page_list_state = ListState::default();
             app.exit = true;
         }
@@ -181,12 +211,23 @@ fn update(app: &mut App, config: &Config, message: Message) -> Result<Option<Mes
                         app.current_pane = CurrentPane::Pages;
                     }
                 }
-                CurrentPane::Pages => return Ok(Some(Message::Save)),
+                CurrentPane::Pages => {
+                    if let Some(mut page) = app.get_selected_page() {
+                        run_editor(terminal, config, &mut page)?;
+                    }
+                    return Ok(Some(Message::ConfirmSave));
+                }
             }
         }
-        Message::Save => app.exit = true,
+        Message::ConfirmSave => {
+            todo!()
+        }
+        Message::Save => {
+            todo!()
+        }
         Message::Back => match &app.current_pane {
             CurrentPane::Pages => {
+                // Clear out the pages list and reset the state
                 app.page_list = vec![];
                 app.page_list_state = ListState::default();
                 app.current_pane = CurrentPane::Spaces;
@@ -195,6 +236,7 @@ fn update(app: &mut App, config: &Config, message: Message) -> Result<Option<Mes
                 app.space_list_state = ListState::default();
             }
         },
+        Message::Refresh => app.refresh_current_list(config)?,
     }
     Ok(None)
 }
@@ -257,13 +299,23 @@ fn handle_events() -> Result<Option<Message>> {
 fn handle_key_event(key_event: KeyEvent) -> Option<Message> {
     match key_event.code {
         KeyCode::Char('q') => Some(Message::Exit),
-        KeyCode::Down => Some(Message::Next),
         KeyCode::Up => Some(Message::Previous),
-        KeyCode::Enter => Some(Message::Select),
-        KeyCode::Right => Some(Message::Select),
+        KeyCode::Down => Some(Message::Next),
         KeyCode::Left => Some(Message::Back),
+        KeyCode::Right | KeyCode::Enter => Some(Message::Select),
+        KeyCode::Char('r') | KeyCode::F(5) => Some(Message::Refresh),
         _ => None,
     }
+}
+
+fn run_editor(terminal: &mut DefaultTerminal, config: &Config, page: &mut Page) -> Result<()> {
+    stdout().execute(LeaveAlternateScreen)?;
+    disable_raw_mode()?;
+    actions::edit_page(config, page)?;
+    stdout().execute(EnterAlternateScreen)?;
+    enable_raw_mode()?;
+    terminal.clear()?;
+    Ok(())
 }
 
 fn get_name_list<N: Name>(item_list: Vec<N>) -> Vec<String> {

@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use core::panic;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -25,9 +25,36 @@ pub fn load_page_list_for_space(config: &Config, space_id: &str) -> Result<Vec<P
 pub fn edit_id(config: &Config, id: &String) -> Result<()> {
     // full workflow for page edit: pulls page, opens nvim, pushes page
     let mut page = Page::get_page_by_id(&config.api, id)?;
-    edit_page(config, &mut page)?;
+    let file_path = save_edit_page(config, &mut page)?;
+    match config.auto_sync {
+        Some(true) => {
+            upload_page(&config.api, &mut page, Some(&file_path))?;
+        }
+        Some(false) | None => {
+            print!("Publish page: y/n?: ");
+            let user_input: String = text_io::read!("{}\n");
+            match user_input.as_str() {
+                "y" | "Y" | "yes" | "Yes" => {
+                    upload_page(&config.api, &mut page, Some(&file_path))?;
+                }
+                _ => bail!("USER_CANCEL"),
+            }
+        }
+    };
 
     update_edited_history(config, id)
+}
+
+pub fn edit_page(config: &Config, page: &mut Page) -> Result<()> {
+    save_edit_page(config, page)?;
+    update_edited_history(
+        config,
+        &page
+            .id
+            .clone()
+            .ok_or_else(|| anyhow!("Edited page did not have an ID"))?,
+    )?;
+    Ok(())
 }
 
 pub fn edit_last_page(config: &Config) -> Result<()> {
@@ -53,7 +80,7 @@ pub fn view_pages(config: &Config) -> Result<()> {
                 Ok(id) => id,
                 Err(e) => return Err(e),
             };
-            return edit_id(config, &id);
+            edit_id(config, &id)
         }
         // Default to ratatui if option not set
         Some(Tui::Ratatui) | None => {
@@ -79,7 +106,7 @@ pub fn upload_existing_page(
     let mut new_page = Page::new(title, user_space_id, root_page_id);
     let mut uploaded_page = upload_page(&config.api, &mut new_page, Some(page_path))?;
     if *should_edit {
-        edit_page(config, &mut uploaded_page)?;
+        save_edit_page(config, &mut uploaded_page)?;
     };
     if let Some(id) = uploaded_page.id {
         update_edited_history(config, &id)
@@ -95,7 +122,7 @@ pub fn create_new_page(config: &Config, should_edit: &bool, title: String) -> Re
     let mut new_page = Page::new(title, user_space_id, root_page_id);
     let mut uploaded_page = upload_page(&config.api, &mut new_page, None)?;
     if *should_edit {
-        edit_page(config, &mut uploaded_page)?;
+        save_edit_page(config, &mut uploaded_page)?;
     };
     if let Some(id) = uploaded_page.id {
         update_edited_history(config, &id)
@@ -120,7 +147,7 @@ pub fn create_new_page(config: &Config, should_edit: &bool, title: String) -> Re
 //     }
 // }
 
-fn edit_page(config: &Config, page: &mut Page) -> Result<Page> {
+fn save_edit_page(config: &Config, page: &mut Page) -> Result<PathBuf> {
     let file_path = save_page_to_file(
         &config.save_location,
         page.id
@@ -129,18 +156,7 @@ fn edit_page(config: &Config, page: &mut Page) -> Result<Page> {
         page.get_body(),
     )?;
     open_editor(&file_path, &config.editor);
-    // Wait here for editor to close
-    match config.auto_sync {
-        Some(true) => upload_page(&config.api, page, Some(&file_path)),
-        Some(false) | None => {
-            print!("Publish page: y/n?: ");
-            let user_input: String = text_io::read!("{}\n");
-            match user_input.as_str() {
-                "y" | "Y" | "yes" | "Yes" => upload_page(&config.api, page, Some(&file_path)),
-                _ => bail!("USER_CANCEL"),
-            }
-        }
-    }
+    Ok(file_path)
 }
 
 fn save_page_to_file(location: &Path, id: &String, body: &String) -> Result<PathBuf> {
