@@ -7,6 +7,10 @@ history_location = '~/confluence_downloads'
 # OPTIONAL: Always sync the page automatically on editor exit without asking. Defaults to false
 auto_sync = 'false'
 
+# OPTIONAL: The TUI to use when the view command is selected. Defaults to ratatui
+# Values: 'ratatui', 'cursive'
+tui = 'ratatui'
+
 # OPTIONAL: The editor to open the markdown file in. Defaults to vim
 [editor]
 # Cmd used to open the editor

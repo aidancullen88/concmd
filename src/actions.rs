@@ -5,10 +5,12 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use cursive::Cursive;
+
 use crate::conf_api::{Page, RootPage, Space};
-use crate::Config;
 use crate::Editor;
 use crate::{alt_tui, Api};
+use crate::{Config, Tui};
 
 // Interface
 
@@ -43,20 +45,27 @@ pub fn edit_last_page(config: &Config) -> Result<()> {
 }
 
 pub fn view_pages(config: &Config) -> Result<()> {
-    // let mut siv = Cursive::default();
-    // siv.set_user_data(config.clone());
-    // let id = match crate::tui::display(&mut siv) {
-    //     Ok(id) => id,
-    //     Err(e) => return Err(e),
-    // };
-    // edit_id(config, &id)
-    let page = alt_tui::display(config)?;
-    edit_id(
-        config,
-        &page
-            .id
-            .expect("page coming from the UI should always have an ID"),
-    )
+    match &config.tui {
+        Some(Tui::Cursive) => {
+            let mut siv = Cursive::default();
+            siv.set_user_data(config.clone());
+            let id = match crate::tui::display(&mut siv) {
+                Ok(id) => id,
+                Err(e) => return Err(e),
+            };
+            return edit_id(config, &id);
+        }
+        // Default to ratatui if option not set
+        Some(Tui::Ratatui) | None => {
+            let page = alt_tui::display(config)?;
+            edit_id(
+                config,
+                &page
+                    .id
+                    .expect("page coming from the UI should always have an ID"),
+            )
+        }
+    }
 }
 
 pub fn upload_existing_page(
@@ -123,7 +132,7 @@ fn edit_page(config: &Config, page: &mut Page) -> Result<Page> {
     // Wait here for editor to close
     match config.auto_sync {
         Some(true) => upload_page(&config.api, page, Some(&file_path)),
-        _ => {
+        Some(false) | None => {
             print!("Publish page: y/n?: ");
             let user_input: String = text_io::read!("{}\n");
             match user_input.as_str() {

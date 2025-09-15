@@ -12,6 +12,14 @@ use ratatui::Frame;
 
 use anyhow::{bail, Result};
 
+/* Concmd uses the ELM architecture:
+* draw the UI based on the state
+* parse input events into a message
+* update the state based on the message
+* loop
+*/
+
+// Holds the entire state of the app
 pub struct App {
     pub space_list: Vec<Space>,
     pub space_list_state: ListState,
@@ -38,6 +46,8 @@ impl App {
         Ok(())
     }
 
+    // Gets the currently selected space based on the app state
+    // Combines the space list and the space list state
     pub fn get_selected_space(&self) -> Option<Space> {
         if let Some(selected_index) = self.space_list_state.selected() {
             return self.space_list.get(selected_index).cloned();
@@ -45,6 +55,10 @@ impl App {
         None
     }
 
+    // Gets the currently selected page based on the app state
+    // Combines the page list and page list state
+    // This is much more likely to return None than the space function above
+    // as there is often no page selected (when changing space options for instance)
     pub fn get_selected_page(&self) -> Option<Page> {
         if let Some(selected_index) = self.page_list_state.selected() {
             return self.page_list.get(selected_index).cloned();
@@ -52,8 +66,10 @@ impl App {
         None
     }
 
-    pub fn list_next(&mut self, pane: CurrentPane) {
-        let (list_state, list_length) = match pane {
+    // Helper functions that enable both lists to be manipulated without duplicate calls
+    // Also handle list wrapping
+    pub fn list_next(&mut self) {
+        let (list_state, list_length) = match self.current_pane {
             CurrentPane::Spaces => {
                 let list_length = self.space_list.len();
                 (&mut self.space_list_state, list_length)
@@ -74,8 +90,8 @@ impl App {
         list_state.select_first();
     }
 
-    pub fn list_previous(&mut self, pane: CurrentPane) {
-        let list_state = match pane {
+    pub fn list_previous(&mut self) {
+        let list_state = match self.current_pane {
             CurrentPane::Spaces => &mut self.space_list_state,
             CurrentPane::Pages => &mut self.page_list_state,
         };
@@ -91,26 +107,34 @@ impl App {
     }
 }
 
+// Represents all possible user actions in the app
 enum Message {
     Next,
     Previous,
     Select,
+    Back,
     Exit,
     Save,
 }
 
+// Represents the current list the user is selecting
 #[derive(Clone, Debug)]
 pub enum CurrentPane {
     Spaces,
     Pages,
 }
 
+// Entry point for the TUI
 pub fn display(config: &Config) -> Result<Page> {
     // let _ = simple_logging::log_to_file("next_handler.log", log::LevelFilter::Info);
     let mut terminal = ratatui::init();
     let spaces = actions::load_space_list(config)?;
     let mut app = App::new(spaces);
+    // If the user exits without saving, the selected page is cleared and app.get_selected_page
+    // will return None. We can rely on this to check if the edit flow should continue or not.
     let app_result = run(config, &mut terminal, &mut app);
+    // Needs to always run to hand back control to the terminal properly, so it lives here above
+    // the match
     ratatui::restore();
     match app_result {
         Ok(_) => {
@@ -128,6 +152,7 @@ fn run(config: &Config, terminal: &mut DefaultTerminal, app: &mut App) -> Result
     while !app.exit {
         terminal.draw(|frame| draw(frame, app))?;
         let mut message = handle_events()?;
+        // Messages can chain other messages (see Message::Select in update)
         while message.is_some() {
             message = update(app, config, message.unwrap())?;
         }
@@ -142,10 +167,10 @@ fn update(app: &mut App, config: &Config, message: Message) -> Result<Option<Mes
             app.exit = true;
         }
         Message::Next => {
-            app.list_next(app.current_pane.clone());
+            app.list_next();
         }
         Message::Previous => {
-            app.list_previous(app.current_pane.clone());
+            app.list_previous();
         }
         Message::Select => {
             match &app.current_pane {
@@ -160,6 +185,16 @@ fn update(app: &mut App, config: &Config, message: Message) -> Result<Option<Mes
             }
         }
         Message::Save => app.exit = true,
+        Message::Back => match &app.current_pane {
+            CurrentPane::Pages => {
+                app.page_list = vec![];
+                app.page_list_state = ListState::default();
+                app.current_pane = CurrentPane::Spaces;
+            }
+            CurrentPane::Spaces => {
+                app.space_list_state = ListState::default();
+            }
+        },
     }
     Ok(None)
 }
@@ -183,9 +218,11 @@ fn draw(frame: &mut Frame, app: &mut App) {
 
     let space_list = List::new(get_name_list(app.space_list.clone()))
         .block(block)
-        .highlight_style(Style::new().italic())
-        .highlight_symbol(">>")
-        .repeat_highlight_symbol(true);
+        .highlight_style(
+            Style::default()
+                .bg(ratatui::style::Color::LightYellow)
+                .fg(ratatui::style::Color::Black),
+        );
 
     frame.render_stateful_widget(space_list, layout[0], &mut app.space_list_state);
 
@@ -199,9 +236,11 @@ fn draw(frame: &mut Frame, app: &mut App) {
 
         let page_list = List::new(get_name_list(app.page_list.clone()))
             .block(block)
-            .highlight_style(Style::new().italic())
-            .highlight_symbol(">>")
-            .repeat_highlight_symbol(true);
+            .highlight_style(
+                Style::default()
+                    .bg(ratatui::style::Color::LightYellow)
+                    .fg(ratatui::style::Color::Black),
+            );
         frame.render_stateful_widget(page_list, layout[1], &mut app.page_list_state);
     }
 }
@@ -222,6 +261,7 @@ fn handle_key_event(key_event: KeyEvent) -> Option<Message> {
         KeyCode::Up => Some(Message::Previous),
         KeyCode::Enter => Some(Message::Select),
         KeyCode::Right => Some(Message::Select),
+        KeyCode::Left => Some(Message::Back),
         _ => None,
     }
 }

@@ -64,6 +64,7 @@ struct Config {
     auto_sync: Option<bool>,
     api: Api,
     editor: Option<Editor>,
+    tui: Option<Tui>,
 }
 
 impl Config {
@@ -75,6 +76,13 @@ impl Config {
         toml::from_str::<Config>(contents.as_str())
             .context("The config file could not be parsed: check the formatting")
     }
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "lowercase")]
+enum Tui {
+    Ratatui,
+    Cursive,
 }
 
 #[derive(Deserialize, Debug, Clone)]
