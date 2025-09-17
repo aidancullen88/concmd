@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::stdout;
 use std::path::PathBuf;
 
@@ -12,8 +13,8 @@ use ratatui::crossterm::ExecutableCommand;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Style, Stylize};
 use ratatui::symbols::border;
-use ratatui::text::Line;
-use ratatui::widgets::{Block, Clear, List, ListState};
+use ratatui::text::{Line, Text};
+use ratatui::widgets::{Block, Clear, List, ListState, Paragraph};
 use ratatui::DefaultTerminal;
 use ratatui::Frame;
 
@@ -35,6 +36,7 @@ pub struct App {
     pub current_area: CurrentArea,
     pub exit: bool,
     pub edited_file_path: Option<PathBuf>,
+    pub page_states_map: HashMap<usize, PageState>,
 }
 
 impl App {
@@ -47,6 +49,7 @@ impl App {
             current_area: CurrentArea::Spaces,
             exit: false,
             edited_file_path: None,
+            page_states_map: HashMap::new(),
         }
     }
 
@@ -149,6 +152,12 @@ enum Message {
     OpenEditor,
 }
 
+#[derive(Clone, Debug)]
+pub enum PageState {
+    NotSaved,
+    Saved,
+}
+
 // Represents the current list the user is selecting
 #[derive(Clone, Debug)]
 pub enum CurrentArea {
@@ -225,9 +234,18 @@ fn update(
             }
         }
         Message::ConfirmSave => {
-            return Ok(Some(Message::Save));
+            if let Some(selected_index) = app.page_list_state.selected() {
+                app.page_states_map.insert(selected_index, PageState::Saved);
+                return Ok(Some(Message::Save));
+            }
         }
-        Message::RejectSave => app.current_area = CurrentArea::Pages,
+        Message::RejectSave => {
+            if let Some(selected_index) = app.page_list_state.selected() {
+                app.current_area = CurrentArea::Pages;
+                app.page_states_map
+                    .insert(selected_index, PageState::NotSaved);
+            }
+        }
         Message::Save => {
             if let Some(mut page) = app.get_selected_page() {
                 actions::upload_edited_page(config, &mut page, app.edited_file_path.as_ref())?;
@@ -288,29 +306,36 @@ fn draw(frame: &mut Frame, app: &mut App) {
             .title(title.centered())
             .border_set(border::THICK);
 
-        let page_list = List::new(get_name_list(app.page_list.clone()))
-            .block(block)
-            .highlight_style(
-                Style::default()
-                    .bg(ratatui::style::Color::LightYellow)
-                    .fg(ratatui::style::Color::Black),
-            );
+        let page_raw_list = get_name_list(app.page_list.clone());
+        let page_marked_list = map_saved_names(page_raw_list, &app.page_states_map);
+
+        let page_list = List::new(page_marked_list).block(block).highlight_style(
+            Style::default()
+                .bg(ratatui::style::Color::LightYellow)
+                .fg(ratatui::style::Color::Black),
+        );
         frame.render_stateful_widget(page_list, layout[1], &mut app.page_list_state);
     }
 
     if let CurrentArea::SavePopup = app.current_area {
-        let block = Block::bordered().title("Publish Page? [Y]es/[n]o");
-        let area = popup_area(frame.area(), 40, 20);
+        let title = Line::from("Publish Page?".bold());
+        let block = Block::bordered()
+            .border_style(Style::new().yellow())
+            .title(title.centered());
+        let question = Paragraph::new(Text::raw("\n[Y]es/[n]o"))
+            .block(block)
+            .centered();
+        let area = popup_area(frame.area(), 20, 5);
         frame.render_widget(Clear, area);
-        frame.render_widget(block, area);
+        frame.render_widget(question, area);
     }
 }
 
 fn popup_area(area: Rect, percent_x: u16, percent_y: u16) -> Rect {
-    let vertical =
-        Layout::vertical([Constraint::Percentage(percent_y)]).flex(ratatui::layout::Flex::Center);
     let horizontal =
-        Layout::horizontal([Constraint::Percentage(percent_x)]).flex(ratatui::layout::Flex::Center);
+        Layout::horizontal([Constraint::Max(percent_x)]).flex(ratatui::layout::Flex::Center);
+    let vertical =
+        Layout::vertical([Constraint::Max(percent_y)]).flex(ratatui::layout::Flex::Center);
     let [area] = vertical.areas(area);
     let [area] = horizontal.areas(area);
     area
@@ -351,4 +376,16 @@ fn run_editor(terminal: &mut DefaultTerminal, config: &Config, page: &mut Page) 
 
 fn get_name_list<N: Named>(item_list: Vec<N>) -> Vec<String> {
     item_list.iter().map(|i| i.get_name()).collect()
+}
+
+fn map_saved_names(item_list: Vec<String>, states_hash: &HashMap<usize, PageState>) -> Vec<String> {
+    item_list
+        .iter()
+        .enumerate()
+        .map(|(i, x)| match states_hash.get(&i) {
+            Some(PageState::Saved) => format!("{} {}", "✓", x),
+            Some(PageState::NotSaved) => format!("{} {}", "✕", x),
+            None => x.clone(),
+        })
+        .collect()
 }
