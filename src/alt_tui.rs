@@ -1,6 +1,7 @@
 use std::io::stdout;
+use std::path::PathBuf;
 
-use crate::conf_api::{Name, Page, Space};
+use crate::conf_api::{Named, Page, Space};
 use crate::{actions, Config};
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
@@ -8,11 +9,11 @@ use ratatui::crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use ratatui::crossterm::ExecutableCommand;
-use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Style, Stylize};
 use ratatui::symbols::border;
 use ratatui::text::Line;
-use ratatui::widgets::{Block, List, ListState};
+use ratatui::widgets::{Block, Clear, List, ListState};
 use ratatui::DefaultTerminal;
 use ratatui::Frame;
 
@@ -31,8 +32,9 @@ pub struct App {
     pub space_list_state: ListState,
     pub page_list: Vec<Page>,
     pub page_list_state: ListState,
-    pub current_pane: CurrentPane,
+    pub current_area: CurrentArea,
     pub exit: bool,
+    pub edited_file_path: Option<PathBuf>,
 }
 
 impl App {
@@ -42,8 +44,9 @@ impl App {
             space_list_state: ListState::default(),
             page_list: vec![],
             page_list_state: ListState::default(),
-            current_pane: CurrentPane::Spaces,
+            current_area: CurrentArea::Spaces,
             exit: false,
+            edited_file_path: None,
         }
     }
 
@@ -75,15 +78,16 @@ impl App {
     // Helper functions that enable both lists to be manipulated without duplicate calls
     // Also handle list wrapping
     pub fn list_next(&mut self) {
-        let (list_state, list_length) = match self.current_pane {
-            CurrentPane::Spaces => {
+        let (list_state, list_length) = match self.current_area {
+            CurrentArea::Spaces => {
                 let list_length = self.space_list.len();
                 (&mut self.space_list_state, list_length)
             }
-            CurrentPane::Pages => {
+            CurrentArea::Pages => {
                 let list_length = self.page_list.len();
                 (&mut self.page_list_state, list_length)
             }
+            CurrentArea::SavePopup => return,
         };
         if let Some(index) = list_state.selected() {
             if index >= list_length - 1 {
@@ -97,9 +101,10 @@ impl App {
     }
 
     pub fn list_previous(&mut self) {
-        let list_state = match self.current_pane {
-            CurrentPane::Spaces => &mut self.space_list_state,
-            CurrentPane::Pages => &mut self.page_list_state,
+        let list_state = match self.current_area {
+            CurrentArea::Spaces => &mut self.space_list_state,
+            CurrentArea::Pages => &mut self.page_list_state,
+            CurrentArea::SavePopup => return,
         };
         if let Some(index) = list_state.selected() {
             if index == 0 {
@@ -113,18 +118,19 @@ impl App {
     }
 
     pub fn refresh_current_list(&mut self, config: &Config) -> Result<()> {
-        match self.current_pane {
-            CurrentPane::Pages => self.load_pages(
+        match self.current_area {
+            CurrentArea::Pages => self.load_pages(
                 config,
                 &self
                     .get_selected_space()
                     .expect("If we're in the pages pane there must be a selected space")
                     .id,
             ),
-            CurrentPane::Spaces => {
+            CurrentArea::Spaces => {
                 self.space_list = actions::load_space_list(config)?;
                 Ok(())
             }
+            _ => Ok(()),
         }
     }
 }
@@ -138,38 +144,32 @@ enum Message {
     Exit,
     Save,
     ConfirmSave,
+    RejectSave,
     Refresh,
+    OpenEditor,
 }
 
 // Represents the current list the user is selecting
 #[derive(Clone, Debug)]
-pub enum CurrentPane {
+pub enum CurrentArea {
     Spaces,
     Pages,
+    SavePopup,
 }
 
 // Entry point for the TUI
-pub fn display(config: &Config) -> Result<Page> {
+pub fn display(config: &Config) -> Result<()> {
     // let _ = simple_logging::log_to_file("next_handler.log", log::LevelFilter::Info);
     let mut terminal = ratatui::init();
     let spaces = actions::load_space_list(config)?;
     let mut app = App::new(spaces);
     // If the user exits without saving, the selected page is cleared and app.get_selected_page
     // will return None. We can rely on this to check if the edit flow should continue or not.
-    let app_result = run(config, &mut terminal, &mut app);
+    run(config, &mut terminal, &mut app)?;
     // Needs to always run to hand back control to the terminal properly, so it lives here above
     // the match
     ratatui::restore();
-    match app_result {
-        Ok(_) => {
-            if let Some(page) = app.get_selected_page() {
-                Ok(page)
-            } else {
-                bail!("USER_APP_EXIT")
-            }
-        }
-        Err(e) => Err(e),
-    }
+    Ok(())
 }
 
 fn run(config: &Config, terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
@@ -203,38 +203,50 @@ fn update(
             app.list_previous();
         }
         Message::Select => {
-            match &app.current_pane {
-                CurrentPane::Spaces => {
+            match &app.current_area {
+                CurrentArea::Spaces => {
                     // load page list and switch current_pane
                     if let Some(selected_space) = app.get_selected_space() {
                         app.load_pages(config, &selected_space.id)?;
-                        app.current_pane = CurrentPane::Pages;
+                        app.current_area = CurrentArea::Pages;
                     }
                 }
-                CurrentPane::Pages => {
-                    if let Some(mut page) = app.get_selected_page() {
-                        run_editor(terminal, config, &mut page)?;
-                    }
-                    return Ok(Some(Message::ConfirmSave));
-                }
+                CurrentArea::Pages => return Ok(Some(Message::OpenEditor)),
+                _ => return Ok(None),
+            }
+        }
+        Message::OpenEditor => {
+            if let Some(mut page) = app.get_selected_page() {
+                let edited_file_path = run_editor(terminal, config, &mut page)?;
+                app.edited_file_path = Some(edited_file_path);
+                app.current_area = CurrentArea::SavePopup;
+            } else {
+                bail!("Editor attempted to open without page selected")
             }
         }
         Message::ConfirmSave => {
-            todo!()
+            return Ok(Some(Message::Save));
         }
+        Message::RejectSave => app.current_area = CurrentArea::Pages,
         Message::Save => {
-            todo!()
+            if let Some(mut page) = app.get_selected_page() {
+                actions::upload_edited_page(config, &mut page, app.edited_file_path.as_ref())?;
+                app.current_area = CurrentArea::Pages;
+            } else {
+                bail!("Attempted to save without a selected page")
+            }
         }
-        Message::Back => match &app.current_pane {
-            CurrentPane::Pages => {
+        Message::Back => match &app.current_area {
+            CurrentArea::Pages => {
                 // Clear out the pages list and reset the state
                 app.page_list = vec![];
                 app.page_list_state = ListState::default();
-                app.current_pane = CurrentPane::Spaces;
+                app.current_area = CurrentArea::Spaces;
             }
-            CurrentPane::Spaces => {
+            CurrentArea::Spaces => {
                 app.space_list_state = ListState::default();
             }
+            _ => return Ok(None),
         },
         Message::Refresh => app.refresh_current_list(config)?,
     }
@@ -285,6 +297,23 @@ fn draw(frame: &mut Frame, app: &mut App) {
             );
         frame.render_stateful_widget(page_list, layout[1], &mut app.page_list_state);
     }
+
+    if let CurrentArea::SavePopup = app.current_area {
+        let block = Block::bordered().title("Publish Page? [Y]es/[n]o");
+        let area = popup_area(frame.area(), 40, 20);
+        frame.render_widget(Clear, area);
+        frame.render_widget(block, area);
+    }
+}
+
+fn popup_area(area: Rect, percent_x: u16, percent_y: u16) -> Rect {
+    let vertical =
+        Layout::vertical([Constraint::Percentage(percent_y)]).flex(ratatui::layout::Flex::Center);
+    let horizontal =
+        Layout::horizontal([Constraint::Percentage(percent_x)]).flex(ratatui::layout::Flex::Center);
+    let [area] = vertical.areas(area);
+    let [area] = horizontal.areas(area);
+    area
 }
 
 fn handle_events() -> Result<Option<Message>> {
@@ -304,20 +333,22 @@ fn handle_key_event(key_event: KeyEvent) -> Option<Message> {
         KeyCode::Left => Some(Message::Back),
         KeyCode::Right | KeyCode::Enter => Some(Message::Select),
         KeyCode::Char('r') | KeyCode::F(5) => Some(Message::Refresh),
+        KeyCode::Char('y') | KeyCode::Char('Y') => Some(Message::ConfirmSave),
+        KeyCode::Char('n') | KeyCode::Char('N') => Some(Message::RejectSave),
         _ => None,
     }
 }
 
-fn run_editor(terminal: &mut DefaultTerminal, config: &Config, page: &mut Page) -> Result<()> {
+fn run_editor(terminal: &mut DefaultTerminal, config: &Config, page: &mut Page) -> Result<PathBuf> {
     stdout().execute(LeaveAlternateScreen)?;
     disable_raw_mode()?;
-    actions::edit_page(config, page)?;
+    let file_path = actions::edit_page(config, page)?;
     stdout().execute(EnterAlternateScreen)?;
     enable_raw_mode()?;
     terminal.clear()?;
-    Ok(())
+    Ok(file_path)
 }
 
-fn get_name_list<N: Name>(item_list: Vec<N>) -> Vec<String> {
+fn get_name_list<N: Named>(item_list: Vec<N>) -> Vec<String> {
     item_list.iter().map(|i| i.get_name()).collect()
 }

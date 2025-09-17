@@ -175,15 +175,24 @@ fn main() {
                 Err(e) => println!("ERROR: {}", e),
             }
         }
-        Action::View => match actions::view_pages(&config) {
-            Ok(_) => println!("Page edited successfully!"),
-            Err(e) if e.to_string() == "USER_CANCEL" => {
-                println!("Exited without saving changes")
-            }
-            Err(e) if e.to_string() == "USER_APP_EXIT" => {
-                println!("Exited without selecting a page")
-            }
-            Err(e) => println!("ERROR: {}", e),
+        Action::View => match config.tui {
+            Some(Tui::Cursive) => match actions::view_pages(&config) {
+                Ok(_) => println!("Page edited successfully!"),
+                Err(e) if e.to_string() == "USER_CANCEL" => {
+                    println!("Exited without saving changes")
+                }
+                Err(e) if e.to_string() == "USER_APP_EXIT" => {
+                    println!("Exited without selecting a page")
+                }
+                Err(e) => println!("ERROR: {}", e),
+            },
+            Some(Tui::Ratatui) | None => match actions::view_pages(&config) {
+                Ok(_) => {}
+                Err(e) if e.to_string() == "USER_APP_EXIT" => {
+                    println!("Exited without selecting a page")
+                }
+                Err(e) => println!("ERROR: {}", e),
+            },
         },
         Action::Upload { path, title, edit } => {
             let expanded_path = match expanduser::expanduser(path) {

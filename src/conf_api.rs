@@ -6,7 +6,7 @@ use std::fmt;
 use crate::Api;
 
 // Used for generic functions over pages and spaces for the UI rendering
-pub trait Name {
+pub trait Named {
     fn get_name(&self) -> String;
 }
 
@@ -58,7 +58,7 @@ pub struct PageVersion {
     pub message: Option<String>,
 }
 
-impl Name for Page {
+impl Named for Page {
     fn get_name(&self) -> String {
         self.title.clone()
     }
@@ -230,7 +230,7 @@ pub struct Space {
     pub name: String,
 }
 
-impl Name for Space {
+impl Named for Space {
     fn get_name(&self) -> String {
         self.name.clone()
     }

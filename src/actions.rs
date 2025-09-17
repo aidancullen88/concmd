@@ -28,6 +28,7 @@ pub fn edit_id(config: &Config, id: &String) -> Result<()> {
     let file_path = save_edit_page(config, &mut page)?;
     match config.auto_sync {
         Some(true) => {
+            println!("Page Uploading...");
             upload_page(&config.api, &mut page, Some(&file_path))?;
         }
         Some(false) | None => {
@@ -35,6 +36,7 @@ pub fn edit_id(config: &Config, id: &String) -> Result<()> {
             let user_input: String = text_io::read!("{}\n");
             match user_input.as_str() {
                 "y" | "Y" | "yes" | "Yes" => {
+                    println!("Page Uploading...");
                     upload_page(&config.api, &mut page, Some(&file_path))?;
                 }
                 _ => bail!("USER_CANCEL"),
@@ -45,8 +47,8 @@ pub fn edit_id(config: &Config, id: &String) -> Result<()> {
     update_edited_history(config, id)
 }
 
-pub fn edit_page(config: &Config, page: &mut Page) -> Result<()> {
-    save_edit_page(config, page)?;
+pub fn edit_page(config: &Config, page: &mut Page) -> Result<PathBuf> {
+    let file_path = save_edit_page(config, page)?;
     update_edited_history(
         config,
         &page
@@ -54,7 +56,7 @@ pub fn edit_page(config: &Config, page: &mut Page) -> Result<()> {
             .clone()
             .ok_or_else(|| anyhow!("Edited page did not have an ID"))?,
     )?;
-    Ok(())
+    Ok(file_path)
 }
 
 pub fn edit_last_page(config: &Config) -> Result<()> {
@@ -83,15 +85,7 @@ pub fn view_pages(config: &Config) -> Result<()> {
             edit_id(config, &id)
         }
         // Default to ratatui if option not set
-        Some(Tui::Ratatui) | None => {
-            let page = alt_tui::display(config)?;
-            edit_id(
-                config,
-                &page
-                    .id
-                    .expect("page coming from the UI should always have an ID"),
-            )
-        }
+        Some(Tui::Ratatui) | None => alt_tui::display(config),
     }
 }
 
@@ -104,6 +98,7 @@ pub fn upload_existing_page(
     let (root_page_id, user_space_id) = select_root_page(config)?;
     // Make the new page struct to upload and then upload with the file at the provided path
     let mut new_page = Page::new(title, user_space_id, root_page_id);
+    println!("Page Uploading...");
     let mut uploaded_page = upload_page(&config.api, &mut new_page, Some(page_path))?;
     if *should_edit {
         save_edit_page(config, &mut uploaded_page)?;
@@ -120,6 +115,7 @@ pub fn create_new_page(config: &Config, should_edit: &bool, title: String) -> Re
     // let page_path = create_local_file(config, &title)?;
 
     let mut new_page = Page::new(title, user_space_id, root_page_id);
+    println!("Page Uploading...");
     let mut uploaded_page = upload_page(&config.api, &mut new_page, None)?;
     if *should_edit {
         save_edit_page(config, &mut uploaded_page)?;
@@ -129,6 +125,15 @@ pub fn create_new_page(config: &Config, should_edit: &bool, title: String) -> Re
     } else {
         bail!("New page was created without id")
     }
+}
+
+pub fn upload_edited_page(
+    config: &Config,
+    page: &mut Page,
+    file_path: Option<&PathBuf>,
+) -> Result<()> {
+    upload_page(&config.api, page, file_path)?;
+    Ok(())
 }
 
 // Worker functions
@@ -237,7 +242,6 @@ fn upload_page(api: &Api, page: &mut Page, file_path: Option<&PathBuf>) -> Resul
         // Replace the existing page body with the converted body
         page.set_body(convert_md_to_html(&unescaped_body)?);
     };
-    println!("Page uploading...");
     // "Hack" to check if we are updating a page or making a new one. Should be an explict enum
     // but...
     match page.id {

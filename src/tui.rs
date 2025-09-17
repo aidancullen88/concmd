@@ -1,4 +1,4 @@
-use crate::conf_api::{Name, Page, Space};
+use crate::conf_api::{Named, Page, Space};
 use crate::Config;
 
 use anyhow::{anyhow, Ok, Result};
@@ -15,7 +15,7 @@ pub fn display(pick_page_ui: &mut Cursive) -> Result<String> {
     where
         I: Iterator,
         // Name ensures that the items have a label representation
-        I::Item: Name,
+        I::Item: Named,
         I::Item: Sync,
         I::Item: Send,
         I::Item: 'static,
