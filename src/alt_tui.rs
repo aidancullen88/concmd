@@ -36,7 +36,7 @@ pub struct App {
     pub current_area: CurrentArea,
     pub exit: bool,
     pub edited_file_path: Option<PathBuf>,
-    pub page_states_map: HashMap<usize, PageState>,
+    pub page_states_map: HashMap<String, PageState>,
 }
 
 impl App {
@@ -174,11 +174,11 @@ pub fn display(config: &Config) -> Result<()> {
     let mut app = App::new(spaces);
     // If the user exits without saving, the selected page is cleared and app.get_selected_page
     // will return None. We can rely on this to check if the edit flow should continue or not.
-    run(config, &mut terminal, &mut app)?;
+    let result = run(config, &mut terminal, &mut app);
     // Needs to always run to hand back control to the terminal properly, so it lives here above
     // the match
     ratatui::restore();
-    Ok(())
+    result
 }
 
 fn run(config: &Config, terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
@@ -234,24 +234,34 @@ fn update(
             }
         }
         Message::ConfirmSave => {
-            if let Some(selected_index) = app.page_list_state.selected() {
-                app.page_states_map.insert(selected_index, PageState::Saved);
-                return Ok(Some(Message::Save));
+            if let CurrentArea::SavePopup = app.current_area {
+                if let Some(page) = app.get_selected_page() {
+                    app.page_states_map
+                        .insert(page.get_name(), PageState::Saved);
+                    return Ok(Some(Message::Save));
+                }
+                bail!("Attempted to save without a page selected")
             }
         }
         Message::RejectSave => {
-            if let Some(selected_index) = app.page_list_state.selected() {
-                app.current_area = CurrentArea::Pages;
-                app.page_states_map
-                    .insert(selected_index, PageState::NotSaved);
+            if let CurrentArea::SavePopup = app.current_area {
+                if let Some(page) = app.get_selected_page() {
+                    app.current_area = CurrentArea::Pages;
+                    app.page_states_map
+                        .insert(page.get_name(), PageState::NotSaved);
+                }
             }
         }
         Message::Save => {
-            if let Some(mut page) = app.get_selected_page() {
-                actions::upload_edited_page(config, &mut page, app.edited_file_path.as_ref())?;
-                app.current_area = CurrentArea::Pages;
-            } else {
-                bail!("Attempted to save without a selected page")
+            if let CurrentArea::SavePopup = app.current_area {
+                if let Some(mut page) = app.get_selected_page() {
+                    actions::upload_edited_page(config, &mut page, app.edited_file_path.as_ref())?;
+                    app.current_area = CurrentArea::Pages;
+                    // Refresh the page list so that pages can be edited again
+                    return Ok(Some(Message::Refresh));
+                } else {
+                    bail!("Attempted to save without a selected page")
+                }
             }
         }
         Message::Back => match &app.current_area {
@@ -378,14 +388,16 @@ fn get_name_list<N: Named>(item_list: Vec<N>) -> Vec<String> {
     item_list.iter().map(|i| i.get_name()).collect()
 }
 
-fn map_saved_names(item_list: Vec<String>, states_hash: &HashMap<usize, PageState>) -> Vec<String> {
+fn map_saved_names(
+    item_list: Vec<String>,
+    states_hash: &HashMap<String, PageState>,
+) -> Vec<String> {
     item_list
         .iter()
-        .enumerate()
-        .map(|(i, x)| match states_hash.get(&i) {
-            Some(PageState::Saved) => format!("{} {}", "✓", x),
-            Some(PageState::NotSaved) => format!("{} {}", "✕", x),
-            None => x.clone(),
+        .map(|i| match states_hash.get(i) {
+            Some(PageState::Saved) => format!("{} {}", "✓", i),
+            Some(PageState::NotSaved) => format!("{} {}", "✕", i),
+            None => format!("  {}", i),
         })
         .collect()
 }

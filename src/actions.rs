@@ -208,7 +208,7 @@ fn convert_md_to_html(body: &String) -> Result<String> {
     let output = pandoc.execute()?;
     match output {
         pandoc::PandocOutput::ToBuffer(pandoc_buff) => Ok(pandoc_buff),
-        _ => panic!("Pandoc returned incorrect type"),
+        _ => bail!("Pandoc returned incorrect type"),
     }
 }
 
