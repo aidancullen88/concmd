@@ -47,8 +47,10 @@ pub fn edit_id(config: &Config, id: &String) -> Result<()> {
     update_edited_history(config, id)
 }
 
+// Shortened workflow for TUI that does not handle upload
 pub fn edit_page(config: &Config, page: &mut Page) -> Result<PathBuf> {
     let file_path = save_edit_page(config, page)?;
+    // Save the edited file for use with --edit last
     update_edited_history(
         config,
         &page
@@ -69,12 +71,13 @@ pub fn edit_last_page(config: &Config) -> Result<()> {
     let history_id = std::fs::read(history_path)?;
     let id_string = String::from_utf8(history_id)?;
 
-    edit_id(config, &id_string.trim().to_string())?;
-    Ok(())
+    edit_id(config, &id_string.trim().to_string())
 }
 
+// Entry point for both TUI options
 pub fn view_pages(config: &Config) -> Result<()> {
     match &config.tui {
+        // Callback heavy nature of cursive requires a lot more setup
         Some(Tui::Cursive) => {
             let mut siv = Cursive::default();
             siv.set_user_data(config.clone());
@@ -103,17 +106,18 @@ pub fn upload_existing_page(
     if *should_edit {
         save_edit_page(config, &mut uploaded_page)?;
     };
-    if let Some(id) = uploaded_page.id {
-        update_edited_history(config, &id)
-    } else {
-        bail!("New page was created without id")
-    }
+    update_edited_history(
+        config,
+        &uploaded_page
+            .id
+            .expect("Uploaded page should always be assigned an ID"),
+    )
 }
 
 pub fn create_new_page(config: &Config, should_edit: &bool, title: String) -> Result<()> {
+    // Let the user select the space to upload to and automatically get the corresponding root page
+    // id
     let (root_page_id, user_space_id) = select_root_page(config)?;
-    // let page_path = create_local_file(config, &title)?;
-
     let mut new_page = Page::new(title, user_space_id, root_page_id);
     println!("Page Uploading...");
     let mut uploaded_page = upload_page(&config.api, &mut new_page, None)?;
@@ -127,6 +131,7 @@ pub fn create_new_page(config: &Config, should_edit: &bool, title: String) -> Re
     }
 }
 
+//
 pub fn upload_edited_page(
     config: &Config,
     page: &mut Page,
@@ -137,20 +142,6 @@ pub fn upload_edited_page(
 }
 
 // Worker functions
-
-// fn create_local_file(config: &Config, title: &String) -> Result<PathBuf> {
-//     let mut new_file_path = config.save_location.to_path_buf();
-//     new_file_path.push(title);
-//     new_file_path.set_extension("md");
-//     match File::create_new(&new_file_path) {
-//         Ok(_) => Ok(new_file_path),
-//         Err(e) => match e.kind() {
-//             io::ErrorKind::NotFound => bail!(UserErrors::InvalidSavePath),
-//             io::ErrorKind::AlreadyExists => bail!(UserErrors::TitleExists),
-//             other => bail!(other),
-//         },
-//     }
-// }
 
 fn save_edit_page(config: &Config, page: &mut Page) -> Result<PathBuf> {
     let file_path = save_page_to_file(
@@ -166,14 +157,10 @@ fn save_edit_page(config: &Config, page: &mut Page) -> Result<PathBuf> {
 
 fn save_page_to_file(location: &Path, id: &String, body: &String) -> Result<PathBuf> {
     let converted_body = convert_html_to_md(body)?;
-
     let mut file_path = location.to_path_buf();
     file_path.push(id);
     file_path.set_extension("md");
     let mut file = File::create(&file_path)?;
-    // let body_unescaped = unescape_chars(body);
-    // let body_table_replaced = remove_complex_table(&body_unescaped);
-    // let body_table_replaced = html2md::parse_html(body);
     file.write_all(converted_body.as_bytes())?;
     Ok(file_path)
 }
@@ -268,7 +255,7 @@ fn select_root_page(config: &Config) -> Result<(String, String)> {
 
     // The root page of the space is always named the same as the space. Get all the root pages
     // (usually only a few) and find the one with the same name
-    let root_pages = &RootPage::get_root_pages(&config.api, &user_selection.id)?;
+    let root_pages = RootPage::get_root_pages(&config.api, &user_selection.id)?;
     let root_page_id = root_pages
         .iter()
         .find(|x| x.title == user_selection.name)

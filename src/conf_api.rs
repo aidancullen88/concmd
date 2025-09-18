@@ -132,14 +132,6 @@ impl Page {
             "Page without version information cannot be updated"
         ))?;
         current_version.number += 1;
-        // match &mut self.version {
-        //     Some(version) => version.number += 1,
-        //     None => {
-        //         return Err(anyhow!(
-        //             "Page without version information cannot be updated"
-        //         ))
-        //     }
-        // }
         let serialised_body = serde_json::to_string(&self)?;
         let current_id = self
             .id
@@ -155,11 +147,7 @@ impl Page {
         )?;
         match resp.status().as_u16() {
             200 => Ok(serde_json::from_str(&resp.text()?)?),
-            _ => bail!(
-                "Publishing failed with error: {}",
-                resp.text()
-                    .expect("Error response should be convertable to text")
-            ),
+            _ => bail!("Publishing failed with error: {}", resp.text()?),
         }
     }
 

@@ -30,12 +30,16 @@ use anyhow::{bail, Result};
 // Holds the entire state of the app
 pub struct App {
     pub space_list: Vec<Space>,
-    pub space_list_state: ListState,
     pub page_list: Vec<Page>,
+    // Holds the ratatui list state (selected item) for each list
+    pub space_list_state: ListState,
     pub page_list_state: ListState,
+    // Tracks which area is active for keystrokes to apply to
     pub current_area: CurrentArea,
     pub exit: bool,
+    // Used to transfer the edited file details between the edit and save updates
     pub edited_file_path: Option<PathBuf>,
+    // Holds the saved states for edited pages for display in the pages list
     pub page_states_map: HashMap<String, PageState>,
 }
 
@@ -90,16 +94,19 @@ impl App {
                 let list_length = self.page_list.len();
                 (&mut self.page_list_state, list_length)
             }
+            // Nav keys don't do anything while the popup is active, so return
             CurrentArea::SavePopup => return,
         };
         if let Some(index) = list_state.selected() {
             if index >= list_length - 1 {
+                // if we're at the end of the list then loop
                 list_state.select_first();
             } else {
                 list_state.select_next();
             }
             return;
         }
+        // If nothing is selected, select the first item
         list_state.select_first();
     }
 
@@ -107,16 +114,19 @@ impl App {
         let list_state = match self.current_area {
             CurrentArea::Spaces => &mut self.space_list_state,
             CurrentArea::Pages => &mut self.page_list_state,
+            // Nav keys don't do anything while the popup is active, so return
             CurrentArea::SavePopup => return,
         };
         if let Some(index) = list_state.selected() {
             if index == 0 {
+                // If we're at the start of the list then loop
                 list_state.select_last();
             } else {
                 list_state.select_previous();
             }
             return;
         }
+        // If nothing is selected, select the last item
         list_state.select_last();
     }
 
@@ -152,6 +162,8 @@ enum Message {
     OpenEditor,
 }
 
+// Possible states for an edited page to end up in
+// Note that there is an implicit third option "not edited"
 #[derive(Clone, Debug)]
 pub enum PageState {
     NotSaved,
@@ -168,15 +180,11 @@ pub enum CurrentArea {
 
 // Entry point for the TUI
 pub fn display(config: &Config) -> Result<()> {
-    // let _ = simple_logging::log_to_file("next_handler.log", log::LevelFilter::Info);
     let mut terminal = ratatui::init();
     let spaces = actions::load_space_list(config)?;
     let mut app = App::new(spaces);
-    // If the user exits without saving, the selected page is cleared and app.get_selected_page
-    // will return None. We can rely on this to check if the edit flow should continue or not.
+    // Store the result here so we can reset the terminal even if it's an error
     let result = run(config, &mut terminal, &mut app);
-    // Needs to always run to hand back control to the terminal properly, so it lives here above
-    // the match
     ratatui::restore();
     result
 }
@@ -185,7 +193,7 @@ fn run(config: &Config, terminal: &mut DefaultTerminal, app: &mut App) -> Result
     while !app.exit {
         terminal.draw(|frame| draw(frame, app))?;
         let mut message = handle_events()?;
-        // Messages can chain other messages (see Message::Select in update)
+        // Messages can chain other messages by returning a Some(Message)
         while message.is_some() {
             message = update(app, config, message.unwrap(), terminal)?;
         }
@@ -199,6 +207,8 @@ fn update(
     message: Message,
     terminal: &mut DefaultTerminal,
 ) -> Result<Option<Message>> {
+    // NOTE: arms that do not return fall through and return Ok(None) i.e. do not chain another
+    // update
     match message {
         Message::Exit => {
             // Reset the list state so that get_selected_page returns None while exiting
@@ -214,19 +224,20 @@ fn update(
         Message::Select => {
             match &app.current_area {
                 CurrentArea::Spaces => {
-                    // load page list and switch current_pane
+                    // load page list and switch current_area
                     if let Some(selected_space) = app.get_selected_space() {
                         app.load_pages(config, &selected_space.id)?;
                         app.current_area = CurrentArea::Pages;
                     }
                 }
                 CurrentArea::Pages => return Ok(Some(Message::OpenEditor)),
-                _ => return Ok(None),
+                _ => {}
             }
         }
         Message::OpenEditor => {
             if let Some(mut page) = app.get_selected_page() {
                 let edited_file_path = run_editor(terminal, config, &mut page)?;
+                // Save the edited file path to use if the user wants to save
                 app.edited_file_path = Some(edited_file_path);
                 app.current_area = CurrentArea::SavePopup;
             } else {
@@ -236,6 +247,7 @@ fn update(
         Message::ConfirmSave => {
             if let CurrentArea::SavePopup = app.current_area {
                 if let Some(page) = app.get_selected_page() {
+                    // Save the page ID to the map to flag as saved in the UI
                     app.page_states_map.insert(
                         page.id.expect("Page from API should always have an ID"),
                         PageState::Saved,
@@ -249,6 +261,7 @@ fn update(
             if let CurrentArea::SavePopup = app.current_area {
                 if let Some(page) = app.get_selected_page() {
                     app.current_area = CurrentArea::Pages;
+                    // Save the page ID to the map to flag as not saved in the UI
                     app.page_states_map.insert(
                         page.id.expect("Page from API should always have an ID"),
                         PageState::NotSaved,
@@ -320,7 +333,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
             .title(title.centered())
             .border_set(border::THICK);
 
-        let page_marked_list = map_saved_names(&app.page_list, &app.page_states_map);
+        let page_marked_list = map_saved_pages(&app.page_list, &app.page_states_map);
 
         let page_list = List::new(page_marked_list).block(block).highlight_style(
             Style::default()
@@ -330,6 +343,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
         frame.render_stateful_widget(page_list, layout[1], &mut app.page_list_state);
     }
 
+    // Save popup block
     if let CurrentArea::SavePopup = app.current_area {
         let title = Line::from("Publish Page?".bold());
         let block = Block::bordered()
@@ -344,6 +358,9 @@ fn draw(frame: &mut Frame, app: &mut App) {
     }
 }
 
+// Helper functions
+
+// Compute the area of the popup box
 fn popup_area(area: Rect, percent_x: u16, percent_y: u16) -> Rect {
     let horizontal =
         Layout::horizontal([Constraint::Max(percent_x)]).flex(ratatui::layout::Flex::Center);
@@ -354,6 +371,7 @@ fn popup_area(area: Rect, percent_x: u16, percent_y: u16) -> Rect {
     area
 }
 
+// Capture key events and return their message
 fn handle_events() -> Result<Option<Message>> {
     match event::read()? {
         Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
@@ -363,6 +381,7 @@ fn handle_events() -> Result<Option<Message>> {
     }
 }
 
+// Match a keycode to the correct message
 fn handle_key_event(key_event: KeyEvent) -> Option<Message> {
     match key_event.code {
         KeyCode::Char('q') => Some(Message::Exit),
@@ -377,6 +396,7 @@ fn handle_key_event(key_event: KeyEvent) -> Option<Message> {
     }
 }
 
+// Pass terminal control to the editor correctly and then take it back once it exits
 fn run_editor(terminal: &mut DefaultTerminal, config: &Config, page: &mut Page) -> Result<PathBuf> {
     stdout().execute(LeaveAlternateScreen)?;
     disable_raw_mode()?;
@@ -387,11 +407,13 @@ fn run_editor(terminal: &mut DefaultTerminal, config: &Config, page: &mut Page) 
     Ok(file_path)
 }
 
+// Anything that implements Named can be turned into a list of names for the ui
 fn get_name_list<N: Named>(item_list: &[N]) -> Vec<String> {
     item_list.iter().map(|i| i.get_name()).collect()
 }
 
-fn map_saved_names(item_list: &[Page], states_hash: &HashMap<String, PageState>) -> Vec<String> {
+// Maps a list of pages to their names + their status by looking up their IDs in the states hash
+fn map_saved_pages(item_list: &[Page], states_hash: &HashMap<String, PageState>) -> Vec<String> {
     item_list
         .iter()
         .map(|i| {
@@ -401,6 +423,8 @@ fn map_saved_names(item_list: &[Page], states_hash: &HashMap<String, PageState>)
                     Some(PageState::NotSaved) => format!("{} {}", "✕", i.get_name()),
                     None => format!("  {}", i.get_name()),
                 }
+            // Else branch should never be hit but is required by the complier so implemented
+            // anyway
             } else {
                 format!("  {}", i.get_name())
             }

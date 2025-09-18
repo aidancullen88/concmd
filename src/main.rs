@@ -122,28 +122,6 @@ where
     Ok(None)
 }
 
-// Collects user errors that require creating a new file to be aborted
-// #[derive(Debug)]
-// enum UserErrors {
-//     InvalidSavePath,
-//     TitleExists,
-// }
-//
-// impl std::error::Error for UserErrors {}
-//
-// impl std::fmt::Display for UserErrors {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         match self {
-//             UserErrors::InvalidSavePath => {
-//                 write!(f, "The save_location defined in the config is invalid. Please edit the config and try again")
-//             }
-//             UserErrors::TitleExists => {
-//                 write!(f, "The title chosen already exists. Please choose another title and try again, or use 'concmd view' to find and edit the existing page")
-//             }
-//         }
-//     }
-// }
-
 fn main() {
     let config = match get_config() {
         Ok(c) => c,
