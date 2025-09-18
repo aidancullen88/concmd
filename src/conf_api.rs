@@ -56,6 +56,8 @@ struct Storage {
 pub struct PageVersion {
     pub number: usize,
     pub message: Option<String>,
+    // #[serde(rename = "createdAt")]
+    // pub created_at: String,
 }
 
 impl Named for Page {
@@ -126,12 +128,10 @@ impl Page {
     }
 
     pub fn update_page_by_id(&mut self, api: &Api) -> Result<Page> {
-        self.version
-            .as_mut()
-            .ok_or(anyhow!(
-                "Page without version information cannot be updated"
-            ))?
-            .number += 1;
+        let current_version = self.version.as_mut().ok_or(anyhow!(
+            "Page without version information cannot be updated"
+        ))?;
+        current_version.number += 1;
         // match &mut self.version {
         //     Some(version) => version.number += 1,
         //     None => {

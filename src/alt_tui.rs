@@ -236,8 +236,10 @@ fn update(
         Message::ConfirmSave => {
             if let CurrentArea::SavePopup = app.current_area {
                 if let Some(page) = app.get_selected_page() {
-                    app.page_states_map
-                        .insert(page.get_name(), PageState::Saved);
+                    app.page_states_map.insert(
+                        page.id.expect("Page from API should always have an ID"),
+                        PageState::Saved,
+                    );
                     return Ok(Some(Message::Save));
                 }
                 bail!("Attempted to save without a page selected")
@@ -247,8 +249,10 @@ fn update(
             if let CurrentArea::SavePopup = app.current_area {
                 if let Some(page) = app.get_selected_page() {
                     app.current_area = CurrentArea::Pages;
-                    app.page_states_map
-                        .insert(page.get_name(), PageState::NotSaved);
+                    app.page_states_map.insert(
+                        page.id.expect("Page from API should always have an ID"),
+                        PageState::NotSaved,
+                    );
                 }
             }
         }
@@ -298,7 +302,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
         .title(title.centered())
         .border_set(border::THICK);
 
-    let space_list = List::new(get_name_list(app.space_list.clone()))
+    let space_list = List::new(get_name_list(&app.space_list))
         .block(block)
         .highlight_style(
             Style::default()
@@ -316,8 +320,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
             .title(title.centered())
             .border_set(border::THICK);
 
-        let page_raw_list = get_name_list(app.page_list.clone());
-        let page_marked_list = map_saved_names(page_raw_list, &app.page_states_map);
+        let page_marked_list = map_saved_names(&app.page_list, &app.page_states_map);
 
         let page_list = List::new(page_marked_list).block(block).highlight_style(
             Style::default()
@@ -384,20 +387,23 @@ fn run_editor(terminal: &mut DefaultTerminal, config: &Config, page: &mut Page) 
     Ok(file_path)
 }
 
-fn get_name_list<N: Named>(item_list: Vec<N>) -> Vec<String> {
+fn get_name_list<N: Named>(item_list: &[N]) -> Vec<String> {
     item_list.iter().map(|i| i.get_name()).collect()
 }
 
-fn map_saved_names(
-    item_list: Vec<String>,
-    states_hash: &HashMap<String, PageState>,
-) -> Vec<String> {
+fn map_saved_names(item_list: &[Page], states_hash: &HashMap<String, PageState>) -> Vec<String> {
     item_list
         .iter()
-        .map(|i| match states_hash.get(i) {
-            Some(PageState::Saved) => format!("{} {}", "✓", i),
-            Some(PageState::NotSaved) => format!("{} {}", "✕", i),
-            None => format!("  {}", i),
+        .map(|i| {
+            if let Some(page_id) = &i.id {
+                match states_hash.get(page_id) {
+                    Some(PageState::Saved) => format!("{} {}", "✓", i.get_name()),
+                    Some(PageState::NotSaved) => format!("{} {}", "✕", i.get_name()),
+                    None => format!("  {}", i.get_name()),
+                }
+            } else {
+                format!("  {}", i.get_name())
+            }
         })
         .collect()
 }
