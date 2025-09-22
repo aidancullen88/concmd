@@ -131,6 +131,13 @@ pub fn create_new_page(config: &Config, should_edit: &bool, title: String) -> Re
     }
 }
 
+pub fn new_page_tui(config: &Config, space: &Space, title: String) -> Result<()> {
+    let root_page_id = find_root_page(&config.api, space)?;
+    let mut new_page = Page::new(title, space.id.clone(), root_page_id);
+    upload_page(&config.api, &mut new_page, None)?;
+    Ok(())
+}
+
 //
 pub fn upload_edited_page(
     config: &Config,
@@ -151,7 +158,7 @@ fn save_edit_page(config: &Config, page: &mut Page) -> Result<PathBuf> {
             .expect("Editing page should always have ID"),
         page.get_body(),
     )?;
-    open_editor(&file_path, &config.editor);
+    open_editor(&file_path, config.editor.as_ref());
     Ok(file_path)
 }
 
@@ -199,7 +206,7 @@ fn convert_md_to_html(body: &String) -> Result<String> {
     }
 }
 
-fn open_editor(path: &PathBuf, editor: &Option<Editor>) {
+fn open_editor(path: &PathBuf, editor: Option<&Editor>) {
     match editor {
         None => Command::new("vim")
             .arg(path)
@@ -255,14 +262,17 @@ fn select_root_page(config: &Config) -> Result<(String, String)> {
 
     // The root page of the space is always named the same as the space. Get all the root pages
     // (usually only a few) and find the one with the same name
-    let root_pages = RootPage::get_root_pages(&config.api, &user_selection.id)?;
-    let root_page_id = root_pages
-        .iter()
-        .find(|x| x.title == user_selection.name)
-        .expect("Should always be a root page with name matching the space")
-        .id
-        .clone();
+    let root_page_id = find_root_page(&config.api, user_selection)?;
     Ok((root_page_id, user_space_id))
+}
+
+fn find_root_page(api: &Api, current_space: &Space) -> Result<String> {
+    let root_pages = RootPage::get_root_pages(api, &current_space.id)?;
+    root_pages
+        .iter()
+        .find(|x| x.title == current_space.name)
+        .map(|page| page.id.clone())
+        .ok_or(anyhow!("Space did not have root page with the same name"))
 }
 
 fn get_space_list(api: &Api) -> Result<Vec<Space>> {
