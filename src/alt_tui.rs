@@ -14,7 +14,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Style, Stylize};
 use ratatui::symbols::border;
 use ratatui::text::{Line, Text};
-use ratatui::widgets::{Block, Clear, List, ListState, Paragraph};
+use ratatui::widgets::{Block, Clear, List, ListState, Paragraph, Wrap};
 use ratatui::DefaultTerminal;
 use ratatui::Frame;
 
@@ -41,6 +41,7 @@ pub struct App {
     pub edited_file_path: Option<PathBuf>,
     // Holds the saved states for edited pages for display in the pages list
     pub page_states_map: HashMap<String, PageState>,
+    pub new_page_title: String,
 }
 
 impl App {
@@ -54,6 +55,7 @@ impl App {
             exit: false,
             edited_file_path: None,
             page_states_map: HashMap::new(),
+            new_page_title: String::new(),
         }
     }
 
@@ -95,7 +97,7 @@ impl App {
                 (&mut self.page_list_state, list_length)
             }
             // Nav keys don't do anything while the popup is active, so return
-            CurrentArea::SavePopup => return,
+            _ => return,
         };
         if let Some(index) = list_state.selected() {
             if index >= list_length - 1 {
@@ -115,7 +117,7 @@ impl App {
             CurrentArea::Spaces => &mut self.space_list_state,
             CurrentArea::Pages => &mut self.page_list_state,
             // Nav keys don't do anything while the popup is active, so return
-            CurrentArea::SavePopup => return,
+            _ => return,
         };
         if let Some(index) = list_state.selected() {
             if index == 0 {
@@ -150,8 +152,8 @@ impl App {
 
 // Represents all possible user actions in the app
 enum Message {
-    Next,
-    Previous,
+    ListNext,
+    ListPrevious,
     Select,
     Back,
     Exit,
@@ -160,6 +162,11 @@ enum Message {
     RejectSave,
     Refresh,
     OpenEditor,
+    NewPage,
+    SaveNewPage,
+    CancelNewPage,
+    BackspaceNewPage,
+    TypeNewPage(char),
 }
 
 // Possible states for an edited page to end up in
@@ -176,6 +183,7 @@ pub enum CurrentArea {
     Spaces,
     Pages,
     SavePopup,
+    NewPagePopup,
 }
 
 // Entry point for the TUI
@@ -192,7 +200,7 @@ pub fn display(config: &Config) -> Result<()> {
 fn run(config: &Config, terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
     while !app.exit {
         terminal.draw(|frame| draw(frame, app))?;
-        let mut message = handle_events()?;
+        let mut message = handle_events(app)?;
         // Messages can chain other messages by returning a Some(Message)
         while message.is_some() {
             message = update(app, config, message.unwrap(), terminal)?;
@@ -215,10 +223,10 @@ fn update(
             app.page_list_state = ListState::default();
             app.exit = true;
         }
-        Message::Next => {
+        Message::ListNext => {
             app.list_next();
         }
-        Message::Previous => {
+        Message::ListPrevious => {
             app.list_previous();
         }
         Message::Select => {
@@ -291,9 +299,28 @@ fn update(
             CurrentArea::Spaces => {
                 app.space_list_state = ListState::default();
             }
-            _ => return Ok(None),
+            _ => {}
         },
         Message::Refresh => app.refresh_current_list(config)?,
+        // New page updates
+        Message::NewPage => {
+            app.current_area = CurrentArea::NewPagePopup;
+        }
+        Message::CancelNewPage => app.current_area = CurrentArea::Pages,
+        Message::SaveNewPage => {
+            actions::new_page_tui(
+                config,
+                &app.get_selected_space()
+                    .expect("Should always be a space selected"),
+                app.new_page_title.clone(),
+            )?;
+            app.current_area = CurrentArea::Pages;
+            return Ok(Some(Message::Refresh));
+        }
+        Message::BackspaceNewPage => {
+            app.new_page_title.pop();
+        }
+        Message::TypeNewPage(value) => app.new_page_title.push(value),
     }
     Ok(None)
 }
@@ -356,43 +383,84 @@ fn draw(frame: &mut Frame, app: &mut App) {
         frame.render_widget(Clear, area);
         frame.render_widget(question, area);
     }
+
+    if let CurrentArea::NewPagePopup = app.current_area {
+        let title = Line::from("Enter new page title".bold());
+        let block = Block::bordered()
+            .border_style(Style::new().yellow())
+            .title(title.centered());
+        let page_title = Paragraph::new(app.new_page_title.clone())
+            .wrap(Wrap { trim: false })
+            .block(block);
+        let area = popup_area(frame.area(), 40, 5);
+        frame.render_widget(Clear, area);
+        frame.render_widget(page_title, area);
+        frame.set_cursor_position((area.x + app.new_page_title.len() as u16 + 1, area.y + 1));
+    }
 }
 
 // Helper functions
 
 // Compute the area of the popup box
-fn popup_area(area: Rect, percent_x: u16, percent_y: u16) -> Rect {
+fn popup_area(area: Rect, max_x: u16, max_y: u16) -> Rect {
     let horizontal =
-        Layout::horizontal([Constraint::Max(percent_x)]).flex(ratatui::layout::Flex::Center);
-    let vertical =
-        Layout::vertical([Constraint::Max(percent_y)]).flex(ratatui::layout::Flex::Center);
+        Layout::horizontal([Constraint::Max(max_x)]).flex(ratatui::layout::Flex::Center);
+    let vertical = Layout::vertical([Constraint::Max(max_y)]).flex(ratatui::layout::Flex::Center);
     let [area] = vertical.areas(area);
     let [area] = horizontal.areas(area);
     area
 }
 
 // Capture key events and return their message
-fn handle_events() -> Result<Option<Message>> {
+fn handle_events(app: &App) -> Result<Option<Message>> {
     match event::read()? {
         Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-            Ok(handle_key_event(key_event))
+            Ok(handle_key_event(key_event, app))
         }
         _ => Ok(None),
     }
 }
 
 // Match a keycode to the correct message
-fn handle_key_event(key_event: KeyEvent) -> Option<Message> {
+fn handle_key_event(key_event: KeyEvent, app: &App) -> Option<Message> {
+    // Universal events apply across all areas
+    // match for more events in future instead of if let
     match key_event.code {
-        KeyCode::Char('q') => Some(Message::Exit),
-        KeyCode::Up => Some(Message::Previous),
-        KeyCode::Down => Some(Message::Next),
-        KeyCode::Left => Some(Message::Back),
-        KeyCode::Right | KeyCode::Enter => Some(Message::Select),
-        KeyCode::Char('r') | KeyCode::F(5) => Some(Message::Refresh),
-        KeyCode::Char('y') | KeyCode::Char('Y') => Some(Message::ConfirmSave),
-        KeyCode::Char('n') | KeyCode::Char('N') => Some(Message::RejectSave),
-        _ => None,
+        KeyCode::Char('q') => return Some(Message::Exit),
+        _ => {}
+    }
+
+    // Events for each area
+    match app.current_area {
+        CurrentArea::Spaces => match key_event.code {
+            KeyCode::Up => Some(Message::ListPrevious),
+            KeyCode::Down => Some(Message::ListNext),
+            KeyCode::Left => Some(Message::Back),
+            KeyCode::Right | KeyCode::Enter => Some(Message::Select),
+            KeyCode::Char('r') => Some(Message::Refresh),
+            _ => None,
+        },
+        CurrentArea::Pages => match key_event.code {
+            KeyCode::Up => Some(Message::ListPrevious),
+            KeyCode::Down => Some(Message::ListNext),
+            KeyCode::Left => Some(Message::Back),
+            KeyCode::Right | KeyCode::Enter => Some(Message::Select),
+            KeyCode::Char('r') => Some(Message::Refresh),
+            KeyCode::Char('n') => Some(Message::NewPage),
+            _ => None,
+        },
+        CurrentArea::SavePopup => match key_event.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => Some(Message::ConfirmSave),
+            KeyCode::Char('n') | KeyCode::Char('N') => Some(Message::RejectSave),
+            _ => None,
+        },
+        CurrentArea::NewPagePopup => match key_event.code {
+            KeyCode::Enter => Some(Message::SaveNewPage),
+            KeyCode::Esc => Some(Message::CancelNewPage),
+            KeyCode::Backspace => Some(Message::BackspaceNewPage),
+            KeyCode::Char(value) => Some(Message::TypeNewPage(value)),
+            _ => None,
+        },
     }
 }
 
