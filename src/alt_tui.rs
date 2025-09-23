@@ -42,6 +42,7 @@ pub struct App {
     // Holds the saved states for edited pages for display in the pages list
     pub page_states_map: HashMap<String, PageState>,
     pub new_page_title: String,
+    pub cursor_offset: usize,
 }
 
 impl App {
@@ -56,6 +57,7 @@ impl App {
             edited_file_path: None,
             page_states_map: HashMap::new(),
             new_page_title: String::new(),
+            cursor_offset: 0,
         }
     }
 
@@ -167,6 +169,8 @@ enum Message {
     CancelNewPage,
     BackspaceNewPage,
     TypeNewPage(char),
+    CursorLeft,
+    CursorRight,
     DeletePage,
     ConfirmDeletePage,
     CancelDeletePage,
@@ -211,6 +215,67 @@ fn run(config: &Config, terminal: &mut DefaultTerminal, app: &mut App) -> Result
         }
     }
     Ok(())
+}
+
+// Capture key events and return their message
+fn handle_events(app: &App) -> Result<Option<Message>> {
+    match event::read()? {
+        Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+            Ok(handle_key_event(key_event, app))
+        }
+        _ => Ok(None),
+    }
+}
+
+// Match a keycode to the correct message
+fn handle_key_event(key_event: KeyEvent, app: &App) -> Option<Message> {
+    // Universal events apply across all areas
+    // match for more events in future instead of if let
+    match key_event.code {
+        KeyCode::Char('q') => return Some(Message::Exit),
+        _ => {}
+    }
+
+    // Events for each area
+    match app.current_area {
+        CurrentArea::Spaces => match key_event.code {
+            KeyCode::Up => Some(Message::ListPrevious),
+            KeyCode::Down => Some(Message::ListNext),
+            KeyCode::Left => Some(Message::Back),
+            KeyCode::Right | KeyCode::Enter => Some(Message::Select),
+            KeyCode::Char('r') => Some(Message::Refresh),
+            _ => None,
+        },
+        CurrentArea::Pages => match key_event.code {
+            KeyCode::Up => Some(Message::ListPrevious),
+            KeyCode::Down => Some(Message::ListNext),
+            KeyCode::Left => Some(Message::Back),
+            KeyCode::Right | KeyCode::Enter => Some(Message::Select),
+            KeyCode::Char('r') => Some(Message::Refresh),
+            KeyCode::Char('n') => Some(Message::NewPage),
+            KeyCode::Char('d') => Some(Message::DeletePage),
+            _ => None,
+        },
+        CurrentArea::SavePopup => match key_event.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => Some(Message::ConfirmSave),
+            KeyCode::Char('n') | KeyCode::Char('N') => Some(Message::RejectSave),
+            _ => None,
+        },
+        CurrentArea::NewPagePopup => match key_event.code {
+            KeyCode::Enter => Some(Message::SaveNewPage),
+            KeyCode::Esc => Some(Message::CancelNewPage),
+            KeyCode::Backspace => Some(Message::BackspaceNewPage),
+            KeyCode::Left => Some(Message::CursorLeft),
+            KeyCode::Right => Some(Message::CursorRight),
+            KeyCode::Char(value) => Some(Message::TypeNewPage(value)),
+            _ => None,
+        },
+        CurrentArea::DeletePopup => match key_event.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => Some(Message::ConfirmDeletePage),
+            KeyCode::Char('n') | KeyCode::Char('N') => Some(Message::CancelDeletePage),
+            _ => None,
+        },
+    }
 }
 
 fn update(
@@ -320,9 +385,22 @@ fn update(
             return Ok(Some(Message::Refresh));
         }
         Message::BackspaceNewPage => {
-            app.new_page_title.pop();
+            let current_cursor_position = app.new_page_title.len() - (app.cursor_offset + 1);
+            app.new_page_title.remove(current_cursor_position);
         }
-        Message::TypeNewPage(value) => app.new_page_title.push(value),
+        Message::CursorLeft => {
+            let current_title_length = app.new_page_title.len();
+            if app.cursor_offset < current_title_length {
+                app.cursor_offset += 1;
+            };
+        }
+        Message::CursorRight => {
+            app.cursor_offset = app.cursor_offset.saturating_sub(1);
+        }
+        Message::TypeNewPage(value) => {
+            let current_cursor_position = app.new_page_title.len() - app.cursor_offset;
+            app.new_page_title.insert(current_cursor_position, value);
+        }
         Message::DeletePage => app.current_area = CurrentArea::DeletePopup,
         Message::ConfirmDeletePage => {
             if let Some(mut page) = app.get_selected_page() {
@@ -338,11 +416,13 @@ fn update(
 
 fn draw(frame: &mut Frame, app: &mut App) {
     let main_title = Line::from("Concmd".bold());
+    // Get the relevant instructions for each area
     let instructions = match &app.current_area {
         CurrentArea::Spaces => Line::from("[r]efresh spaces "),
         CurrentArea::Pages => Line::from("[r]efresh pages | [n]ew page | [d]elete page "),
         _ => Line::from(""),
     };
+    // Borderless block to hold the main title and the area instructions
     let container_block = Block::new()
         .title(main_title.centered())
         .title_bottom(instructions.right_aligned());
@@ -426,7 +506,10 @@ fn draw(frame: &mut Frame, app: &mut App) {
         let area = popup_area(frame.area(), 40, 5);
         frame.render_widget(Clear, area);
         frame.render_widget(page_title, area);
-        frame.set_cursor_position((area.x + app.new_page_title.len() as u16 + 1, area.y + 1));
+        frame.set_cursor_position((
+            area.x + app.new_page_title.len() as u16 + 1 - app.cursor_offset as u16,
+            area.y + 1,
+        ));
     }
 
     // Delete page confirmation popup
@@ -463,65 +546,6 @@ fn popup_area(area: Rect, max_x: u16, max_y: u16) -> Rect {
     let [area] = vertical.areas(area);
     let [area] = horizontal.areas(area);
     area
-}
-
-// Capture key events and return their message
-fn handle_events(app: &App) -> Result<Option<Message>> {
-    match event::read()? {
-        Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-            Ok(handle_key_event(key_event, app))
-        }
-        _ => Ok(None),
-    }
-}
-
-// Match a keycode to the correct message
-fn handle_key_event(key_event: KeyEvent, app: &App) -> Option<Message> {
-    // Universal events apply across all areas
-    // match for more events in future instead of if let
-    match key_event.code {
-        KeyCode::Char('q') => return Some(Message::Exit),
-        _ => {}
-    }
-
-    // Events for each area
-    match app.current_area {
-        CurrentArea::Spaces => match key_event.code {
-            KeyCode::Up => Some(Message::ListPrevious),
-            KeyCode::Down => Some(Message::ListNext),
-            KeyCode::Left => Some(Message::Back),
-            KeyCode::Right | KeyCode::Enter => Some(Message::Select),
-            KeyCode::Char('r') => Some(Message::Refresh),
-            _ => None,
-        },
-        CurrentArea::Pages => match key_event.code {
-            KeyCode::Up => Some(Message::ListPrevious),
-            KeyCode::Down => Some(Message::ListNext),
-            KeyCode::Left => Some(Message::Back),
-            KeyCode::Right | KeyCode::Enter => Some(Message::Select),
-            KeyCode::Char('r') => Some(Message::Refresh),
-            KeyCode::Char('n') => Some(Message::NewPage),
-            KeyCode::Char('d') => Some(Message::DeletePage),
-            _ => None,
-        },
-        CurrentArea::SavePopup => match key_event.code {
-            KeyCode::Char('y') | KeyCode::Char('Y') => Some(Message::ConfirmSave),
-            KeyCode::Char('n') | KeyCode::Char('N') => Some(Message::RejectSave),
-            _ => None,
-        },
-        CurrentArea::NewPagePopup => match key_event.code {
-            KeyCode::Enter => Some(Message::SaveNewPage),
-            KeyCode::Esc => Some(Message::CancelNewPage),
-            KeyCode::Backspace => Some(Message::BackspaceNewPage),
-            KeyCode::Char(value) => Some(Message::TypeNewPage(value)),
-            _ => None,
-        },
-        CurrentArea::DeletePopup => match key_event.code {
-            KeyCode::Char('y') | KeyCode::Char('Y') => Some(Message::ConfirmDeletePage),
-            KeyCode::Char('n') | KeyCode::Char('N') => Some(Message::CancelDeletePage),
-            _ => None,
-        },
-    }
 }
 
 // Pass terminal control to the editor correctly and then take it back once it exits
