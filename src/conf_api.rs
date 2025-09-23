@@ -23,8 +23,6 @@ pub struct Page {
     pub version: Option<PageVersion>,
     #[serde(rename = "spaceId")]
     space_id: Option<String>,
-    #[serde(rename = "parentId")]
-    parent_id: Option<String>,
     body: Body,
 }
 
@@ -68,11 +66,11 @@ impl Named for Page {
 
 impl Page {
     // Constructor used when uploading a completely new page
-    pub fn new(title: String, space_id: String, parent_id: String) -> Page {
+    pub fn new(title: String, space_id: String) -> Page {
         let body = Body::Upload(Storage {
             // The body is replaced by the serialised body later, so add a placeholder
             // for now
-            value: "PLACEHOLDER".to_string(),
+            value: String::new(),
             representation: "storage".to_string(),
         });
         Page {
@@ -81,7 +79,6 @@ impl Page {
             status: "current".to_string(),
             version: None,
             space_id: Some(space_id),
-            parent_id: Some(parent_id),
             body,
         }
     }
@@ -181,6 +178,26 @@ impl Page {
         let results = serde_json::from_str::<PageResults>(&resp)?;
         Ok(results.results)
     }
+
+    pub fn delete_page(&self, api: &Api) -> Result<()> {
+        let resp = send_request(
+            api,
+            RequestType::Del,
+            format!(
+                "https://{}/wiki/api/v2/pages/{}",
+                api.confluence_domain,
+                self.id
+                    .clone()
+                    .expect("Page to be deleted should always have an ID")
+            ),
+        )?;
+        match resp.status().as_u16() {
+            204 => Ok(()),
+            401 => bail!("DELETE_UNAUTH"),
+            400 => bail!("Page was not found on confluence"),
+            _ => bail!("Bad request: {}", resp.text()?),
+        }
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -252,6 +269,7 @@ fn send_request(api: &Api, method: RequestType, url: String) -> Result<blocking:
         RequestType::Get => client.get(url),
         RequestType::Put(body) => client.put(url).body(body),
         RequestType::Post(body) => client.post(url).body(body),
+        RequestType::Del => client.delete(url),
     };
     let resp = generic_client
         .basic_auth(&api.username, Some(&api.token))
@@ -260,37 +278,11 @@ fn send_request(api: &Api, method: RequestType, url: String) -> Result<blocking:
     Ok(resp)
 }
 
-#[derive(Deserialize, Debug)]
-struct RootPageContainer {
-    results: Vec<RootPage>,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct RootPage {
-    pub id: String,
-    pub title: String,
-}
-
-impl RootPage {
-    pub fn get_root_pages(api: &Api, space_id: &String) -> Result<Vec<RootPage>> {
-        let resp = send_request(
-            api,
-            RequestType::Get,
-            format!(
-                "https://{}/wiki/api/v2/spaces/{}/pages?depth=root",
-                api.confluence_domain, space_id
-            ),
-        )?
-        .text()?;
-        let results = serde_json::from_str::<RootPageContainer>(&resp)?;
-        Ok(results.results)
-    }
-}
-
 enum RequestType {
     Get,
     Put(String),
     Post(String),
+    Del,
 }
 
 impl fmt::Display for RequestType {
@@ -299,6 +291,7 @@ impl fmt::Display for RequestType {
             RequestType::Get => write!(f, "GET"),
             RequestType::Put(_) => write!(f, "PUT"),
             RequestType::Post(_) => write!(f, "POST"),
+            RequestType::Del => write!(f, "DEL"),
         }
     }
 }

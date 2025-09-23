@@ -14,7 +14,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Style, Stylize};
 use ratatui::symbols::border;
 use ratatui::text::{Line, Text};
-use ratatui::widgets::{Block, Clear, List, ListState, Paragraph, Wrap};
+use ratatui::widgets::{Block, Clear, List, ListState, Padding, Paragraph, Wrap};
 use ratatui::DefaultTerminal;
 use ratatui::Frame;
 
@@ -167,6 +167,9 @@ enum Message {
     CancelNewPage,
     BackspaceNewPage,
     TypeNewPage(char),
+    DeletePage,
+    ConfirmDeletePage,
+    CancelDeletePage,
 }
 
 // Possible states for an edited page to end up in
@@ -184,6 +187,7 @@ pub enum CurrentArea {
     Pages,
     SavePopup,
     NewPagePopup,
+    DeletePopup,
 }
 
 // Entry point for the TUI
@@ -248,8 +252,6 @@ fn update(
                 // Save the edited file path to use if the user wants to save
                 app.edited_file_path = Some(edited_file_path);
                 app.current_area = CurrentArea::SavePopup;
-            } else {
-                bail!("Editor attempted to open without page selected")
             }
         }
         Message::ConfirmSave => {
@@ -321,6 +323,15 @@ fn update(
             app.new_page_title.pop();
         }
         Message::TypeNewPage(value) => app.new_page_title.push(value),
+        Message::DeletePage => app.current_area = CurrentArea::DeletePopup,
+        Message::ConfirmDeletePage => {
+            if let Some(mut page) = app.get_selected_page() {
+                actions::delete_page(&config.api, &mut page)?;
+            };
+            app.current_area = CurrentArea::Pages;
+            return Ok(Some(Message::Refresh));
+        }
+        Message::CancelDeletePage => app.current_area = CurrentArea::Pages,
     }
     Ok(None)
 }
@@ -375,15 +386,23 @@ fn draw(frame: &mut Frame, app: &mut App) {
         let title = Line::from("Publish Page?".bold());
         let block = Block::bordered()
             .border_style(Style::new().yellow())
-            .title(title.centered());
-        let question = Paragraph::new(Text::raw("\n[Y]es/[n]o"))
+            .title(title.centered())
+            .padding(Padding {
+                left: 1,
+                right: 1,
+                top: 1,
+                bottom: 1,
+            });
+        let question = Paragraph::new(Text::raw("Do you wish to save the edited page? [Y]es/[n]o"))
+            .wrap(Wrap { trim: false })
             .block(block)
             .centered();
-        let area = popup_area(frame.area(), 20, 5);
+        let area = popup_area(frame.area(), 40, 6);
         frame.render_widget(Clear, area);
         frame.render_widget(question, area);
     }
 
+    // New page title entry popup
     if let CurrentArea::NewPagePopup = app.current_area {
         let title = Line::from("Enter new page title".bold());
         let block = Block::bordered()
@@ -396,6 +415,29 @@ fn draw(frame: &mut Frame, app: &mut App) {
         frame.render_widget(Clear, area);
         frame.render_widget(page_title, area);
         frame.set_cursor_position((area.x + app.new_page_title.len() as u16 + 1, area.y + 1));
+    }
+
+    // Delete page confirmation popup
+    if let CurrentArea::DeletePopup = app.current_area {
+        let title = Line::from("Delete page?".bold());
+        let block = Block::bordered()
+            .border_style(Style::new().yellow())
+            .title(title.centered())
+            .padding(Padding {
+                left: 1,
+                right: 1,
+                top: 1,
+                bottom: 1,
+            });
+        let question = Paragraph::new(Text::raw(
+            "Are you sure you want to delete this page? [Y]es/[n]o",
+        ))
+        .wrap(Wrap { trim: false })
+        .block(block)
+        .centered();
+        let area = popup_area(frame.area(), 40, 6);
+        frame.render_widget(Clear, area);
+        frame.render_widget(question, area);
     }
 }
 
@@ -447,6 +489,7 @@ fn handle_key_event(key_event: KeyEvent, app: &App) -> Option<Message> {
             KeyCode::Right | KeyCode::Enter => Some(Message::Select),
             KeyCode::Char('r') => Some(Message::Refresh),
             KeyCode::Char('n') => Some(Message::NewPage),
+            KeyCode::Char('d') => Some(Message::DeletePage),
             _ => None,
         },
         CurrentArea::SavePopup => match key_event.code {
@@ -459,6 +502,11 @@ fn handle_key_event(key_event: KeyEvent, app: &App) -> Option<Message> {
             KeyCode::Esc => Some(Message::CancelNewPage),
             KeyCode::Backspace => Some(Message::BackspaceNewPage),
             KeyCode::Char(value) => Some(Message::TypeNewPage(value)),
+            _ => None,
+        },
+        CurrentArea::DeletePopup => match key_event.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => Some(Message::ConfirmDeletePage),
+            KeyCode::Char('n') | KeyCode::Char('N') => Some(Message::CancelDeletePage),
             _ => None,
         },
     }

@@ -7,7 +7,7 @@ use std::process::Command;
 
 use cursive::Cursive;
 
-use crate::conf_api::{Page, RootPage, Space};
+use crate::conf_api::{Page, Space};
 use crate::Editor;
 use crate::{alt_tui, Api};
 use crate::{Config, Tui};
@@ -98,9 +98,9 @@ pub fn upload_existing_page(
     page_path: &PathBuf,
     title: String,
 ) -> Result<()> {
-    let (root_page_id, user_space_id) = select_root_page(config)?;
+    let user_space_id = select_space(&config.api)?;
     // Make the new page struct to upload and then upload with the file at the provided path
-    let mut new_page = Page::new(title, user_space_id, root_page_id);
+    let mut new_page = Page::new(title, user_space_id);
     println!("Page Uploading...");
     let mut uploaded_page = upload_page(&config.api, &mut new_page, Some(page_path))?;
     if *should_edit {
@@ -115,10 +115,9 @@ pub fn upload_existing_page(
 }
 
 pub fn create_new_page(config: &Config, should_edit: &bool, title: String) -> Result<()> {
-    // Let the user select the space to upload to and automatically get the corresponding root page
-    // id
-    let (root_page_id, user_space_id) = select_root_page(config)?;
-    let mut new_page = Page::new(title, user_space_id, root_page_id);
+    // Let the user select the space to upload to
+    let user_space_id = select_space(&config.api)?;
+    let mut new_page = Page::new(title, user_space_id);
     println!("Page Uploading...");
     let mut uploaded_page = upload_page(&config.api, &mut new_page, None)?;
     if *should_edit {
@@ -132,13 +131,11 @@ pub fn create_new_page(config: &Config, should_edit: &bool, title: String) -> Re
 }
 
 pub fn new_page_tui(config: &Config, space: &Space, title: String) -> Result<()> {
-    let root_page_id = find_root_page(&config.api, space)?;
-    let mut new_page = Page::new(title, space.id.clone(), root_page_id);
+    let mut new_page = Page::new(title, space.id.clone());
     upload_page(&config.api, &mut new_page, None)?;
     Ok(())
 }
 
-//
 pub fn upload_edited_page(
     config: &Config,
     page: &mut Page,
@@ -146,6 +143,10 @@ pub fn upload_edited_page(
 ) -> Result<()> {
     upload_page(&config.api, page, file_path)?;
     Ok(())
+}
+
+pub fn delete_page(api: &Api, page: &mut Page) -> Result<()> {
+    page.delete_page(api)
 }
 
 // Worker functions
@@ -253,33 +254,16 @@ fn get_history_path_or_default(config: &Config) -> PathBuf {
     }
 }
 
-fn select_root_page(config: &Config) -> Result<(String, String)> {
-    // TODO: Instead of just trying to get the root page, give a list of folders or the root to
-    // choose from
-    let space_list = get_space_list(&config.api)?;
-    let user_selection = user_choose_space(&space_list);
-    let user_space_id = user_selection.id.to_owned();
-
-    // The root page of the space is always named the same as the space. Get all the root pages
-    // (usually only a few) and find the one with the same name
-    let root_page_id = find_root_page(&config.api, user_selection)?;
-    Ok((root_page_id, user_space_id))
-}
-
-fn find_root_page(api: &Api, current_space: &Space) -> Result<String> {
-    let root_pages = RootPage::get_root_pages(api, &current_space.id)?;
-    root_pages
-        .iter()
-        .find(|x| x.title == current_space.name)
-        .map(|page| page.id.clone())
-        .ok_or(anyhow!("Space did not have root page with the same name"))
+fn select_space(api: &Api) -> Result<String> {
+    let space_list = get_space_list(api)?;
+    Ok(user_choose_space(space_list).id)
 }
 
 fn get_space_list(api: &Api) -> Result<Vec<Space>> {
     Space::get_spaces(api)
 }
 
-fn user_choose_space(space_list: &[Space]) -> &Space {
+fn user_choose_space(mut space_list: Vec<Space>) -> Space {
     println!("Available Spaces:");
     for (i, space) in space_list.iter().enumerate() {
         println!(
@@ -304,7 +288,5 @@ fn user_choose_space(space_list: &[Space]) -> &Space {
         };
         break;
     }
-    space_list
-        .get(selection - 1)
-        .expect("Index is bounds checked above")
+    space_list.remove(selection - 1)
 }
