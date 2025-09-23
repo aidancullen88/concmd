@@ -345,7 +345,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
     };
     let container_block = Block::new()
         .title(main_title.centered())
-        .title_top(instructions.left_aligned());
+        .title_bottom(instructions.right_aligned());
     let inner_area = container_block.inner(frame.area());
     frame.render_widget(container_block, frame.area());
 
