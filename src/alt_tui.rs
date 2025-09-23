@@ -337,6 +337,18 @@ fn update(
 }
 
 fn draw(frame: &mut Frame, app: &mut App) {
+    let main_title = Line::from("Concmd".bold());
+    let instructions = match &app.current_area {
+        CurrentArea::Spaces => Line::from("[r]efresh spaces "),
+        CurrentArea::Pages => Line::from("[r]efresh pages | [n]ew page | [d]elete page "),
+        _ => Line::from(""),
+    };
+    let container_block = Block::new()
+        .title(main_title.centered())
+        .title_top(instructions.left_aligned());
+    let inner_area = container_block.inner(frame.area());
+    frame.render_widget(container_block, frame.area());
+
     let layout = Layout::default()
         .direction(Direction::Horizontal)
         .constraints(vec![
@@ -344,7 +356,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
             Constraint::Percentage(30),
             Constraint::Percentage(50),
         ])
-        .split(frame.area());
+        .split(inner_area);
 
     // Space list block
     let title = Line::from("Spaces".bold());
