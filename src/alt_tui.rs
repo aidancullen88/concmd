@@ -184,12 +184,15 @@ impl App {
             _ => return,
         };
         let current_title_length = current_text.len();
+        // If we're not at the start of the text, then move left i.e. increase the negative
+        // position
         if self.cursor_negative_offset < current_title_length {
             self.cursor_negative_offset += 1;
         };
     }
 
     pub fn cursor_right(&mut self) {
+        // Decrease the offset, saturating at 0
         self.cursor_negative_offset = self.cursor_negative_offset.saturating_sub(1);
     }
 
@@ -203,6 +206,7 @@ impl App {
         current_text.insert(current_cursor_position, char);
     }
 
+    // Should be called any time the text entry box is exited
     pub fn reset_cursor(&mut self) {
         self.cursor_negative_offset = 0;
     }
@@ -484,7 +488,8 @@ fn update(
         Message::CancelDeletePage => app.current_area = CurrentArea::Pages,
         Message::StartSearch => app.current_area = CurrentArea::SearchPopup,
         Message::ConfirmSearch => {
-            // Doesn't work??
+            // If there was a previous search active, get the full list before applying the new
+            // search
             if app.search.search_active {
                 app.refresh_current_list(config)?;
             }
@@ -498,16 +503,15 @@ fn update(
             app.reset_cursor();
         }
         Message::CancelSearch => {
+            // If there's no search then clear the current search so the box is empty next time
+            // the user tries to search. If there was a previous search, don't clear it so that
+            // search is still there
             if !app.search.search_active {
                 app.search.current_search = String::new();
             }
             app.current_area = CurrentArea::Pages;
             app.reset_cursor();
-        } // Message::ClearSearch => {
-          //     app.search.search_active = false;
-          //     app.search.current_search = String::new();
-          //     return Ok(Some(Message::Refresh));
-          // }
+        }
     }
     Ok(None)
 }
@@ -575,93 +579,94 @@ fn draw(frame: &mut Frame, app: &mut App) {
     }
 
     // Save popup block
-    if let CurrentArea::SavePopup = app.current_area {
-        let title = Line::from("Publish Page?".bold());
-        let block = Block::bordered()
-            .border_style(Style::new().yellow())
-            .title(title.centered())
-            .padding(Padding {
-                left: 1,
-                right: 1,
-                top: 1,
-                bottom: 1,
-            });
-        let question = Paragraph::new(Text::raw("Do you wish to save the edited page? [Y]es/[n]o"))
+    match app.current_area {
+        CurrentArea::SavePopup => {
+            let title = Line::from("Publish Page?".bold());
+            let block = Block::bordered()
+                .border_style(Style::new().yellow())
+                .title(title.centered())
+                .padding(Padding {
+                    left: 1,
+                    right: 1,
+                    top: 1,
+                    bottom: 1,
+                });
+            let question =
+                Paragraph::new(Text::raw("Do you wish to save the edited page? [Y]es/[n]o"))
+                    .wrap(Wrap { trim: false })
+                    .block(block)
+                    .centered();
+            let area = popup_area(frame.area(), 40, 6);
+            frame.render_widget(Clear, area);
+            frame.render_widget(question, area);
+        }
+        CurrentArea::NewPagePopup => {
+            let title = Line::from("Enter new page title".bold());
+            let block = Block::bordered()
+                .border_style(Style::new().yellow())
+                .padding(Padding {
+                    left: 1,
+                    right: 1,
+                    top: 1,
+                    bottom: 1,
+                })
+                .title(title.centered());
+            let page_title = Paragraph::new(app.new_page_title.clone())
+                .wrap(Wrap { trim: false })
+                .block(block);
+            let area = popup_area(frame.area(), 40, 5);
+            frame.render_widget(Clear, area);
+            frame.render_widget(page_title, area);
+            frame.set_cursor_position((
+                area.x + app.new_page_title.len() as u16 + 1 - app.cursor_negative_offset as u16,
+                area.y + 2,
+            ));
+        }
+        CurrentArea::DeletePopup => {
+            let title = Line::from("Delete page?".bold());
+            let block = Block::bordered()
+                .border_style(Style::new().yellow())
+                .title(title.centered())
+                .padding(Padding {
+                    left: 1,
+                    right: 1,
+                    top: 1,
+                    bottom: 1,
+                });
+            let question = Paragraph::new(Text::raw(
+                "Are you sure you want to delete this page? [Y]es/[n]o",
+            ))
             .wrap(Wrap { trim: false })
             .block(block)
             .centered();
-        let area = popup_area(frame.area(), 40, 6);
-        frame.render_widget(Clear, area);
-        frame.render_widget(question, area);
-    }
-
-    // New page title entry popup
-    if let CurrentArea::NewPagePopup = app.current_area {
-        let title = Line::from("Enter new page title".bold());
-        let block = Block::bordered()
-            .border_style(Style::new().yellow())
-            .title(title.centered());
-        let page_title = Paragraph::new(format!(
-            "{}\nlen: {}, cursor: {}",
-            app.new_page_title.clone(),
-            app.new_page_title.len(),
-            app.cursor_negative_offset
-        ))
-        .wrap(Wrap { trim: false })
-        .block(block);
-        let area = popup_area(frame.area(), 40, 5);
-        frame.render_widget(Clear, area);
-        frame.render_widget(page_title, area);
-        frame.set_cursor_position((
-            area.x + app.new_page_title.len() as u16 + 1 - app.cursor_negative_offset as u16,
-            area.y + 1,
-        ));
-    }
-
-    // Delete page confirmation popup
-    if let CurrentArea::DeletePopup = app.current_area {
-        let title = Line::from("Delete page?".bold());
-        let block = Block::bordered()
-            .border_style(Style::new().yellow())
-            .title(title.centered())
-            .padding(Padding {
-                left: 1,
-                right: 1,
-                top: 1,
-                bottom: 1,
-            });
-        let question = Paragraph::new(Text::raw(
-            "Are you sure you want to delete this page? [Y]es/[n]o",
-        ))
-        .wrap(Wrap { trim: false })
-        .block(block)
-        .centered();
-        let area = popup_area(frame.area(), 40, 6);
-        frame.render_widget(Clear, area);
-        frame.render_widget(question, area);
-    }
-
-    // Search pages popup
-    if let CurrentArea::SearchPopup = app.current_area {
-        let title = Line::from("Search pages".bold());
-        let block = Block::bordered()
-            .border_style(Style::new().yellow())
-            .title(title.centered());
-        let current_search = Paragraph::new(format!(
-            "{}\nlen: {}, cursor: {}",
-            app.search.current_search.clone(),
-            app.search.current_search.len(),
-            app.cursor_negative_offset
-        ))
-        .wrap(Wrap { trim: false })
-        .block(block);
-        let area = popup_area(frame.area(), 40, 5);
-        frame.render_widget(Clear, area);
-        frame.render_widget(current_search, area);
-        frame.set_cursor_position((
-            area.x + app.search.current_search.len() as u16 + 1 - app.cursor_negative_offset as u16,
-            area.y + 1,
-        ));
+            let area = popup_area(frame.area(), 40, 6);
+            frame.render_widget(Clear, area);
+            frame.render_widget(question, area);
+        }
+        CurrentArea::SearchPopup => {
+            let title = Line::from("Search pages".bold());
+            let block = Block::bordered()
+                .border_style(Style::new().yellow())
+                .padding(Padding {
+                    left: 1,
+                    right: 1,
+                    top: 1,
+                    bottom: 1,
+                })
+                .title(title.centered());
+            let current_search = Paragraph::new(app.search.current_search.clone())
+                .wrap(Wrap { trim: false })
+                .block(block);
+            let area = popup_area(frame.area(), 40, 5);
+            frame.render_widget(Clear, area);
+            frame.render_widget(current_search, area);
+            frame.set_cursor_position((
+                area.x + app.search.current_search.len() as u16 + 1
+                    - app.cursor_negative_offset as u16,
+                area.y + 1,
+            ));
+        }
+        _ => {}
     }
 }
 
@@ -700,9 +705,13 @@ fn map_saved_pages(item_list: &[Page], states_hash: &HashMap<String, PageState>)
         .map(|i| {
             if let Some(page_id) = &i.id {
                 match states_hash.get(page_id) {
-                    Some(PageState::Saved) => format!("{} {}", "✓", i.get_name()),
-                    Some(PageState::NotSaved) => format!("{} {}", "✕", i.get_name()),
-                    None => format!("  {}", i.get_name()),
+                    Some(PageState::Saved) => {
+                        format!("{} {} - {}", "✓", i.get_name(), i.get_date_created())
+                    }
+                    Some(PageState::NotSaved) => {
+                        format!("{} {} - {}", "✕", i.get_name(), i.get_date_created())
+                    }
+                    None => format!("  {} - {}", i.get_name(), i.get_date_created()),
                 }
             // Else branch should never be hit but is required by the complier so implemented
             // anyway

@@ -24,6 +24,8 @@ pub struct Page {
     #[serde(rename = "spaceId")]
     space_id: Option<String>,
     body: Body,
+    #[serde(rename = "createdAt")]
+    created_at: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -80,6 +82,7 @@ impl Page {
             version: None,
             space_id: Some(space_id),
             body,
+            created_at: None,
         }
     }
     // Getter and setter for body to allow for download and upload in the same struct.
@@ -108,6 +111,15 @@ impl Page {
                 };
                 self.body = Body::Upload(new_body)
             }
+        }
+    }
+
+    pub fn get_date_created(&self) -> String {
+        if let Some(created_at) = &self.created_at {
+            let (date, _) = created_at.split_at(10);
+            date.to_owned()
+        } else {
+            "".to_owned()
         }
     }
 
