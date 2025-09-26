@@ -42,7 +42,13 @@ pub struct App {
     // Holds the saved states for edited pages for display in the pages list
     pub page_states_map: HashMap<String, PageState>,
     pub new_page_title: String,
-    pub cursor_offset: usize,
+    pub cursor_negative_offset: usize,
+    pub search: Search,
+}
+
+pub struct Search {
+    pub current_search: String,
+    pub search_active: bool,
 }
 
 impl App {
@@ -57,7 +63,11 @@ impl App {
             edited_file_path: None,
             page_states_map: HashMap::new(),
             new_page_title: String::new(),
-            cursor_offset: 0,
+            cursor_negative_offset: 0,
+            search: Search {
+                current_search: String::new(),
+                search_active: false,
+            },
         }
     }
 
@@ -150,6 +160,50 @@ impl App {
             _ => Ok(()),
         }
     }
+
+    pub fn backspace_text(&mut self) {
+        let current_text = match self.current_area {
+            CurrentArea::NewPagePopup => &mut self.new_page_title,
+            CurrentArea::SearchPopup => &mut self.search.current_search,
+            _ => return,
+        };
+        let current_length = current_text.len();
+        if (current_length != 0) && (current_length != self.cursor_negative_offset) {
+            let current_cursor_position =
+                current_length.saturating_sub(self.cursor_negative_offset + 1);
+            current_text.remove(current_cursor_position);
+        }
+    }
+
+    pub fn cursor_left(&mut self) {
+        let current_text = match self.current_area {
+            CurrentArea::NewPagePopup => &mut self.new_page_title,
+            CurrentArea::SearchPopup => &mut self.search.current_search,
+            _ => return,
+        };
+        let current_title_length = current_text.len();
+        if self.cursor_negative_offset < current_title_length {
+            self.cursor_negative_offset += 1;
+        };
+    }
+
+    pub fn cursor_right(&mut self) {
+        self.cursor_negative_offset = self.cursor_negative_offset.saturating_sub(1);
+    }
+
+    pub fn type_char(&mut self, char: char) {
+        let current_text = match self.current_area {
+            CurrentArea::NewPagePopup => &mut self.new_page_title,
+            CurrentArea::SearchPopup => &mut self.search.current_search,
+            _ => return,
+        };
+        let current_cursor_position = current_text.len() - self.cursor_negative_offset;
+        current_text.insert(current_cursor_position, char);
+    }
+
+    pub fn reset_cursor(&mut self) {
+        self.cursor_negative_offset = 0;
+    }
 }
 
 // Represents all possible user actions in the app
@@ -167,13 +221,17 @@ enum Message {
     NewPage,
     SaveNewPage,
     CancelNewPage,
-    BackspaceNewPage,
-    TypeNewPage(char),
+    Backspace,
+    TypeChar(char),
     CursorLeft,
     CursorRight,
     DeletePage,
     ConfirmDeletePage,
     CancelDeletePage,
+    StartSearch,
+    ConfirmSearch,
+    CancelSearch,
+    // ClearSearch,
 }
 
 // Possible states for an edited page to end up in
@@ -192,6 +250,7 @@ pub enum CurrentArea {
     SavePopup,
     NewPagePopup,
     DeletePopup,
+    SearchPopup,
 }
 
 // Entry point for the TUI
@@ -254,6 +313,7 @@ fn handle_key_event(key_event: KeyEvent, app: &App) -> Option<Message> {
             KeyCode::Char('r') => Some(Message::Refresh),
             KeyCode::Char('n') => Some(Message::NewPage),
             KeyCode::Char('d') => Some(Message::DeletePage),
+            KeyCode::Char('s') => Some(Message::StartSearch),
             _ => None,
         },
         CurrentArea::SavePopup => match key_event.code {
@@ -264,15 +324,24 @@ fn handle_key_event(key_event: KeyEvent, app: &App) -> Option<Message> {
         CurrentArea::NewPagePopup => match key_event.code {
             KeyCode::Enter => Some(Message::SaveNewPage),
             KeyCode::Esc => Some(Message::CancelNewPage),
-            KeyCode::Backspace => Some(Message::BackspaceNewPage),
+            KeyCode::Backspace => Some(Message::Backspace),
             KeyCode::Left => Some(Message::CursorLeft),
             KeyCode::Right => Some(Message::CursorRight),
-            KeyCode::Char(value) => Some(Message::TypeNewPage(value)),
+            KeyCode::Char(value) => Some(Message::TypeChar(value)),
             _ => None,
         },
         CurrentArea::DeletePopup => match key_event.code {
             KeyCode::Char('y') | KeyCode::Char('Y') => Some(Message::ConfirmDeletePage),
             KeyCode::Char('n') | KeyCode::Char('N') => Some(Message::CancelDeletePage),
+            _ => None,
+        },
+        CurrentArea::SearchPopup => match key_event.code {
+            KeyCode::Enter => Some(Message::ConfirmSearch),
+            KeyCode::Esc => Some(Message::CancelSearch),
+            KeyCode::Backspace => Some(Message::Backspace),
+            KeyCode::Left => Some(Message::CursorLeft),
+            KeyCode::Right => Some(Message::CursorRight),
+            KeyCode::Char(value) => Some(Message::TypeChar(value)),
             _ => None,
         },
     }
@@ -368,12 +437,22 @@ fn update(
             }
             _ => {}
         },
-        Message::Refresh => app.refresh_current_list(config)?,
+        Message::Refresh => {
+            if app.search.search_active {
+                app.search.search_active = false;
+                app.search.current_search = String::new();
+            };
+            app.refresh_current_list(config)?;
+        }
         // New page updates
         Message::NewPage => {
             app.current_area = CurrentArea::NewPagePopup;
         }
-        Message::CancelNewPage => app.current_area = CurrentArea::Pages,
+        Message::CancelNewPage => {
+            app.current_area = CurrentArea::Pages;
+            app.new_page_title = String::new();
+            app.reset_cursor();
+        }
         Message::SaveNewPage => {
             actions::new_page_tui(
                 config,
@@ -382,25 +461,15 @@ fn update(
                 app.new_page_title.clone(),
             )?;
             app.current_area = CurrentArea::Pages;
+            app.reset_cursor();
             return Ok(Some(Message::Refresh));
         }
-        Message::BackspaceNewPage => {
-            let current_cursor_position = app.new_page_title.len() - (app.cursor_offset + 1);
-            app.new_page_title.remove(current_cursor_position);
-        }
-        Message::CursorLeft => {
-            let current_title_length = app.new_page_title.len();
-            if app.cursor_offset < current_title_length {
-                app.cursor_offset += 1;
-            };
-        }
-        Message::CursorRight => {
-            app.cursor_offset = app.cursor_offset.saturating_sub(1);
-        }
-        Message::TypeNewPage(value) => {
-            let current_cursor_position = app.new_page_title.len() - app.cursor_offset;
-            app.new_page_title.insert(current_cursor_position, value);
-        }
+        // Edit current text input field
+        Message::Backspace => app.backspace_text(),
+        Message::CursorLeft => app.cursor_left(),
+        Message::CursorRight => app.cursor_right(),
+        Message::TypeChar(value) => app.type_char(value),
+
         Message::DeletePage => app.current_area = CurrentArea::DeletePopup,
         Message::ConfirmDeletePage => {
             if let Some(mut page) = app.get_selected_page() {
@@ -410,6 +479,28 @@ fn update(
             return Ok(Some(Message::Refresh));
         }
         Message::CancelDeletePage => app.current_area = CurrentArea::Pages,
+        Message::StartSearch => app.current_area = CurrentArea::SearchPopup,
+        Message::ConfirmSearch => {
+            app.page_list.retain(|p| {
+                p.get_name()
+                    .to_lowercase()
+                    .contains(&app.search.current_search.to_lowercase())
+            });
+            app.current_area = CurrentArea::Pages;
+            app.search.search_active = true;
+            app.reset_cursor();
+        }
+        Message::CancelSearch => {
+            if !app.search.search_active {
+                app.search.current_search = String::new();
+            }
+            app.current_area = CurrentArea::Pages;
+            app.reset_cursor();
+        } // Message::ClearSearch => {
+          //     app.search.search_active = false;
+          //     app.search.current_search = String::new();
+          //     return Ok(Some(Message::Refresh));
+          // }
     }
     Ok(None)
 }
@@ -419,7 +510,9 @@ fn draw(frame: &mut Frame, app: &mut App) {
     // Get the relevant instructions for each area
     let instructions = match &app.current_area {
         CurrentArea::Spaces => Line::from("[r]efresh spaces "),
-        CurrentArea::Pages => Line::from("[r]efresh pages | [n]ew page | [d]elete page "),
+        CurrentArea::Pages => Line::from(
+            "[r]efresh pages (clear search) | [n]ew page | [d]elete page | [s]earch pages",
+        ),
         _ => Line::from(""),
     };
     // Borderless block to hold the main title and the area instructions
@@ -456,7 +549,8 @@ fn draw(frame: &mut Frame, app: &mut App) {
     frame.render_stateful_widget(space_list, layout[0], &mut app.space_list_state);
 
     // Page list block
-    if !app.page_list.is_empty() {
+    // Show the page block if the search returns no pages
+    if !app.page_list.is_empty() || app.search.search_active {
         let title = Line::from("Pages".bold());
 
         let block = Block::bordered()
@@ -500,14 +594,19 @@ fn draw(frame: &mut Frame, app: &mut App) {
         let block = Block::bordered()
             .border_style(Style::new().yellow())
             .title(title.centered());
-        let page_title = Paragraph::new(app.new_page_title.clone())
-            .wrap(Wrap { trim: false })
-            .block(block);
+        let page_title = Paragraph::new(format!(
+            "{}\nlen: {}, cursor: {}",
+            app.new_page_title.clone(),
+            app.new_page_title.len(),
+            app.cursor_negative_offset
+        ))
+        .wrap(Wrap { trim: false })
+        .block(block);
         let area = popup_area(frame.area(), 40, 5);
         frame.render_widget(Clear, area);
         frame.render_widget(page_title, area);
         frame.set_cursor_position((
-            area.x + app.new_page_title.len() as u16 + 1 - app.cursor_offset as u16,
+            area.x + app.new_page_title.len() as u16 + 1 - app.cursor_negative_offset as u16,
             area.y + 1,
         ));
     }
@@ -533,6 +632,29 @@ fn draw(frame: &mut Frame, app: &mut App) {
         let area = popup_area(frame.area(), 40, 6);
         frame.render_widget(Clear, area);
         frame.render_widget(question, area);
+    }
+
+    // Search pages popup
+    if let CurrentArea::SearchPopup = app.current_area {
+        let title = Line::from("Search pages".bold());
+        let block = Block::bordered()
+            .border_style(Style::new().yellow())
+            .title(title.centered());
+        let current_search = Paragraph::new(format!(
+            "{}\nlen: {}, cursor: {}",
+            app.search.current_search.clone(),
+            app.search.current_search.len(),
+            app.cursor_negative_offset
+        ))
+        .wrap(Wrap { trim: false })
+        .block(block);
+        let area = popup_area(frame.area(), 40, 5);
+        frame.render_widget(Clear, area);
+        frame.render_widget(current_search, area);
+        frame.set_cursor_position((
+            area.x + app.search.current_search.len() as u16 + 1 - app.cursor_negative_offset as u16,
+            area.y + 1,
+        ));
     }
 }
 
