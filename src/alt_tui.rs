@@ -146,7 +146,7 @@ impl App {
 
     pub fn refresh_current_list(&mut self, config: &Config) -> Result<()> {
         match self.current_area {
-            CurrentArea::Pages => self.load_pages(
+            CurrentArea::Pages | CurrentArea::SearchPopup => self.load_pages(
                 config,
                 &self
                     .get_selected_space()
@@ -157,7 +157,7 @@ impl App {
                 self.space_list = actions::load_space_list(config)?;
                 Ok(())
             }
-            _ => Ok(()),
+            _ => bail!("Cannot refresh this area"),
         }
     }
 
@@ -168,7 +168,9 @@ impl App {
             _ => return,
         };
         let current_length = current_text.len();
+        // Make sure the text is not empty and the cursor is not right at the start
         if (current_length != 0) && (current_length != self.cursor_negative_offset) {
+            // Shouldn't be able to error because of the check above but sat sub just in case
             let current_cursor_position =
                 current_length.saturating_sub(self.cursor_negative_offset + 1);
             current_text.remove(current_cursor_position);
@@ -450,6 +452,7 @@ fn update(
         }
         Message::CancelNewPage => {
             app.current_area = CurrentArea::Pages;
+            // Reset the new page title if the user cancelled
             app.new_page_title = String::new();
             app.reset_cursor();
         }
@@ -481,6 +484,10 @@ fn update(
         Message::CancelDeletePage => app.current_area = CurrentArea::Pages,
         Message::StartSearch => app.current_area = CurrentArea::SearchPopup,
         Message::ConfirmSearch => {
+            // Doesn't work??
+            if app.search.search_active {
+                app.refresh_current_list(config)?;
+            }
             app.page_list.retain(|p| {
                 p.get_name()
                     .to_lowercase()
