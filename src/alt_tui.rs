@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::stdout;
+use std::iter::zip;
 use std::path::PathBuf;
 
 use crate::conf_api::{Named, Page, Space};
@@ -569,12 +570,24 @@ fn draw(frame: &mut Frame, app: &mut App) {
             .border_set(border::THICK);
 
         let page_marked_list = map_saved_pages(&app.page_list, &app.page_states_map);
+        let page_dates_list = get_created_on_list(app.page_list.clone());
 
-        let page_list = List::new(page_marked_list).block(block).highlight_style(
-            Style::default()
-                .bg(ratatui::style::Color::LightYellow)
-                .fg(ratatui::style::Color::Black),
-        );
+        let block_area = layout[1].x;
+
+        let page_date_aligned_list = zip(page_marked_list, page_dates_list).map(|(p, d)| {
+            let page_name_len = p.len();
+            // let date_len = d.len();
+            let space = block_area as usize - page_name_len;
+            return format!("{}{:>width$}", p, d, width = space as usize);
+        });
+
+        let page_list = List::new(page_date_aligned_list)
+            .block(block)
+            .highlight_style(
+                Style::default()
+                    .bg(ratatui::style::Color::LightYellow)
+                    .fg(ratatui::style::Color::Black),
+            );
         frame.render_stateful_widget(page_list, layout[1], &mut app.page_list_state);
     }
 
@@ -706,12 +719,12 @@ fn map_saved_pages(item_list: &[Page], states_hash: &HashMap<String, PageState>)
             if let Some(page_id) = &i.id {
                 match states_hash.get(page_id) {
                     Some(PageState::Saved) => {
-                        format!("{} {} - {}", "✓", i.get_name(), i.get_date_created())
+                        format!("{} {}", "✓", i.get_name())
                     }
                     Some(PageState::NotSaved) => {
-                        format!("{} {} - {}", "✕", i.get_name(), i.get_date_created())
+                        format!("{} {}", "✕", i.get_name())
                     }
-                    None => format!("  {} - {}", i.get_name(), i.get_date_created()),
+                    None => format!("  {}", i.get_name()),
                 }
             // Else branch should never be hit but is required by the complier so implemented
             // anyway
@@ -720,4 +733,8 @@ fn map_saved_pages(item_list: &[Page], states_hash: &HashMap<String, PageState>)
             }
         })
         .collect()
+}
+
+fn get_created_on_list(page_list: Vec<Page>) -> Vec<String> {
+    page_list.iter().map(|p| p.get_date_created()).collect()
 }
