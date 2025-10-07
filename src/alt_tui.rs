@@ -572,13 +572,12 @@ fn draw(frame: &mut Frame, app: &mut App) {
         let page_marked_list = map_saved_pages(&app.page_list, &app.page_states_map);
         let page_dates_list = get_created_on_list(app.page_list.clone());
 
-        let block_area = layout[1].x;
+        let block_area = layout[1].width as usize;
 
         let page_date_aligned_list = zip(page_marked_list, page_dates_list).map(|(p, d)| {
             let page_name_len = p.len();
-            // let date_len = d.len();
-            let space = block_area as usize - page_name_len;
-            return format!("{}{:>width$}", p, d, width = space as usize);
+            let space = block_area.saturating_sub(page_name_len).saturating_sub(5);
+            return format!("{}  {:>width$}", p, d, width = space);
         });
 
         let page_list = List::new(page_date_aligned_list)
