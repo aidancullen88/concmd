@@ -630,8 +630,9 @@ fn draw(frame: &mut Frame, app: &mut App) {
             let area = popup_area(frame.area(), 40, 5);
             frame.render_widget(Clear, area);
             frame.render_widget(page_title, area);
+            // x and y are offset by 2 to account for padding
             frame.set_cursor_position((
-                area.x + app.new_page_title.len() as u16 + 1 - app.cursor_negative_offset as u16,
+                area.x + 2 + app.new_page_title.len() as u16 - app.cursor_negative_offset as u16,
                 area.y + 2,
             ));
         }
@@ -673,10 +674,11 @@ fn draw(frame: &mut Frame, app: &mut App) {
             let area = popup_area(frame.area(), 40, 5);
             frame.render_widget(Clear, area);
             frame.render_widget(current_search, area);
+            // x and y are offset by 2 to account for padding
             frame.set_cursor_position((
-                area.x + app.search.current_search.len() as u16 + 1
+                area.x + 2 + app.search.current_search.len() as u16
                     - app.cursor_negative_offset as u16,
-                area.y + 1,
+                area.y + 2,
             ));
         }
         _ => {}
