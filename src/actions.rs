@@ -28,7 +28,7 @@ pub fn edit_id(config: &Config, id: &String) -> Result<()> {
     let file_path = save_edit_page(config, &mut page)?;
     match config.auto_sync {
         Some(true) => {
-            println!("Page Uploading...");
+            println!("Page uploading...");
             upload_page(&config.api, &mut page, Some(&file_path))?;
         }
         Some(false) | None => {
@@ -36,7 +36,7 @@ pub fn edit_id(config: &Config, id: &String) -> Result<()> {
             let user_input: String = text_io::read!("{}\n");
             match user_input.as_str() {
                 "y" | "Y" | "yes" | "Yes" => {
-                    println!("Page Uploading...");
+                    println!("Page uploading...");
                     upload_page(&config.api, &mut page, Some(&file_path))?;
                 }
                 _ => bail!("USER_CANCEL"),
@@ -149,6 +149,13 @@ pub fn delete_page(api: &Api, page: &mut Page) -> Result<()> {
     page.delete_page(api)
 }
 
+// Get a truncated view of the
+pub fn get_page_preview(page: &Page, preview_length: usize) -> Result<String> {
+    let body = page.get_body();
+    // Get the first 50 chars from the string and convert to md
+    convert_html_to_md(&body.chars().take(preview_length).collect::<String>())
+}
+
 // Worker functions
 
 fn save_edit_page(config: &Config, page: &mut Page) -> Result<PathBuf> {
@@ -179,7 +186,7 @@ fn update_edited_history(config: &Config, id: &String) -> Result<()> {
     Ok(())
 }
 
-fn convert_html_to_md(body: &String) -> Result<String> {
+fn convert_html_to_md(body: &str) -> Result<String> {
     let mut pandoc = pandoc::new();
     pandoc.set_input_format(pandoc::InputFormat::Html, vec![]);
     pandoc.set_input(pandoc::InputKind::Pipe(body.to_string()));
@@ -193,7 +200,7 @@ fn convert_html_to_md(body: &String) -> Result<String> {
     }
 }
 
-fn convert_md_to_html(body: &String) -> Result<String> {
+fn convert_md_to_html(body: &str) -> Result<String> {
     let mut pandoc = pandoc::new();
     pandoc.set_input_format(pandoc::InputFormat::MarkdownGithub, vec![]);
     pandoc.set_input(pandoc::InputKind::Pipe(body.to_string()));

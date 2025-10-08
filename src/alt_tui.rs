@@ -574,6 +574,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
 
         let block_area = layout[1].width as usize;
 
+        // Iterate through the page titles, and add the dates in page_date_list to each page title
         let page_date_aligned_list = zip(page_marked_list, page_dates_list).map(|(p, d)| {
             let page_name_len = p.len();
             let space = block_area.saturating_sub(page_name_len).saturating_sub(5);
@@ -588,6 +589,29 @@ fn draw(frame: &mut Frame, app: &mut App) {
                     .fg(ratatui::style::Color::Black),
             );
         frame.render_stateful_widget(page_list, layout[1], &mut app.page_list_state);
+
+        // If there's a page selected, render a short preview of the content to the right
+        if let Some(selected_page) = app.get_selected_page() {
+            let preview_text = actions::get_page_preview(&selected_page, 1000)
+                .expect("should always be able to preview the page");
+            let preview_text_lines = preview_text.lines().count();
+            // Make a box the same size as the amount of lines in the preview
+            let internal_layout =
+                Layout::vertical([Constraint::Length(preview_text_lines as u16)]).split(layout[2]);
+            let title = Line::from("Preview".bold());
+            let block = Block::bordered()
+                .title(title.centered())
+                .border_set(border::PLAIN);
+            let preview = Paragraph::new(Text::from(
+                actions::get_page_preview(&selected_page, 1000)
+                    .expect("Page should always be convertable"),
+            ))
+            .wrap(Wrap { trim: false })
+            .block(block)
+            .left_aligned();
+
+            frame.render_widget(preview, internal_layout[0]);
+        }
     }
 
     // Save popup block
