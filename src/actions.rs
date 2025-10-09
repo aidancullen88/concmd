@@ -25,7 +25,7 @@ pub fn load_page_list_for_space(config: &Config, space_id: &str) -> Result<Vec<P
 pub fn edit_id(config: &Config, id: &String) -> Result<()> {
     // full workflow for page edit: pulls page, opens nvim, pushes page
     let mut page = Page::get_page_by_id(&config.api, id)?;
-    let file_path = save_edit_page(config, &mut page)?;
+    let file_path = save_and_edit_page(config, &mut page)?;
     match config.auto_sync {
         Some(true) => {
             println!("Page uploading...");
@@ -49,7 +49,7 @@ pub fn edit_id(config: &Config, id: &String) -> Result<()> {
 
 // Shortened workflow for TUI that does not handle upload
 pub fn edit_page(config: &Config, page: &mut Page) -> Result<PathBuf> {
-    let file_path = save_edit_page(config, page)?;
+    let file_path = save_and_edit_page(config, page)?;
     // Save the edited file for use with --edit last
     update_edited_history(
         config,
@@ -101,7 +101,7 @@ pub fn upload_existing_page(
     println!("Page Uploading...");
     let mut uploaded_page = upload_page(&config.api, &mut new_page, Some(page_path))?;
     if *should_edit {
-        save_edit_page(config, &mut uploaded_page)?;
+        save_and_edit_page(config, &mut uploaded_page)?;
     };
     update_edited_history(
         config,
@@ -118,7 +118,7 @@ pub fn create_new_page(config: &Config, should_edit: &bool, title: String) -> Re
     println!("Page Uploading...");
     let mut uploaded_page = upload_page(&config.api, &mut new_page, None)?;
     if *should_edit {
-        save_edit_page(config, &mut uploaded_page)?;
+        save_and_edit_page(config, &mut uploaded_page)?;
     };
     if let Some(id) = uploaded_page.id {
         update_edited_history(config, &id)
@@ -159,7 +159,7 @@ pub fn get_page_by_id(api: &Api, id: &str) -> Result<Page> {
 
 // Worker functions
 
-fn save_edit_page(config: &Config, page: &mut Page) -> Result<PathBuf> {
+fn save_and_edit_page(config: &Config, page: &mut Page) -> Result<PathBuf> {
     let file_path = save_page_to_file(
         &config.save_location,
         page.id
@@ -167,7 +167,7 @@ fn save_edit_page(config: &Config, page: &mut Page) -> Result<PathBuf> {
             .expect("Editing page should always have ID"),
         page.get_body(),
     )?;
-    open_editor(&file_path, config.editor.as_ref());
+    open_editor(&file_path, config.editor.as_ref())?;
     Ok(file_path)
 }
 
@@ -215,26 +215,18 @@ fn convert_md_to_html(body: &str) -> Result<String> {
     }
 }
 
-fn open_editor(path: &PathBuf, editor: Option<&Editor>) {
+fn open_editor(path: &PathBuf, editor: Option<&Editor>) -> Result<()> {
     match editor {
-        None => Command::new("vim")
-            .arg(path)
-            .spawn()
-            .expect("editor should be available to open")
-            .wait()
-            .expect("editor exited with non-zero status"),
+        None => Ok(edit::edit_file(path)?),
         Some(ed) => {
             let mut cmd = Command::new(&ed.editor);
             if let Some(args) = &ed.args {
                 cmd.args(args);
             };
-            cmd.arg(path)
-                .spawn()
-                .expect("failed to open editor")
-                .wait()
-                .expect("editor exited with non-zero status")
+            cmd.arg(path).spawn()?.wait()?;
+            Ok(())
         }
-    };
+    }
 }
 
 fn upload_page(api: &Api, page: &mut Page, file_path: Option<&PathBuf>) -> Result<Page> {

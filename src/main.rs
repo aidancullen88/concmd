@@ -137,6 +137,7 @@ fn main() {
     match cli.action {
         Action::Edit { id, last, preview } => {
             // FIXME: this logic sucks, refactor pls. Also says "page uploaded" when it wasn't
+            // also maybe allow the user to give the preview length as an optional param
             let result = if last {
                 actions::edit_last_page(&config)
             } else {
