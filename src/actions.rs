@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use core::panic;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -7,9 +7,9 @@ use std::process::Command;
 
 use cursive::Cursive;
 
-use crate::conf_api::{Page, Space};
 use crate::Editor;
-use crate::{alt_tui, Api};
+use crate::conf_api::{Page, Space};
+use crate::{Api, alt_tui};
 use crate::{Config, Tui};
 
 // Interface

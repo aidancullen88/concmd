@@ -4,22 +4,22 @@ use std::iter::zip;
 use std::path::PathBuf;
 
 use crate::conf_api::{Named, Page, Space};
-use crate::{actions, Config};
+use crate::{Config, actions};
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
-use ratatui::crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
-};
+use ratatui::DefaultTerminal;
+use ratatui::Frame;
 use ratatui::crossterm::ExecutableCommand;
+use ratatui::crossterm::terminal::{
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Style, Stylize};
 use ratatui::symbols::border;
 use ratatui::text::{Line, Text};
 use ratatui::widgets::{Block, Clear, List, ListState, Padding, Paragraph, Wrap};
-use ratatui::DefaultTerminal;
-use ratatui::Frame;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 /* Concmd uses the ELM architecture:
 * draw the UI based on the state
@@ -45,6 +45,8 @@ pub struct App {
     pub new_page_title: String,
     pub cursor_negative_offset: usize,
     pub search: Search,
+    pub show_preview: bool,
+    pub show_help: bool,
 }
 
 pub struct Search {
@@ -69,6 +71,8 @@ impl App {
                 current_search: String::new(),
                 search_active: false,
             },
+            show_preview: false,
+            show_help: false,
         }
     }
 
@@ -238,7 +242,8 @@ enum Message {
     StartSearch,
     ConfirmSearch,
     CancelSearch,
-    // ClearSearch,
+    TogglePreview,
+    ToggleHelp,
 }
 
 // Possible states for an edited page to end up in
@@ -299,6 +304,7 @@ fn handle_key_event(key_event: KeyEvent, app: &App) -> Option<Message> {
     // match for more events in future instead of if let
     match key_event.code {
         KeyCode::Char('q') => return Some(Message::Exit),
+        KeyCode::Char('?') => return Some(Message::ToggleHelp),
         _ => {}
     }
 
@@ -321,6 +327,7 @@ fn handle_key_event(key_event: KeyEvent, app: &App) -> Option<Message> {
             KeyCode::Char('n') => Some(Message::NewPage),
             KeyCode::Char('d') => Some(Message::DeletePage),
             KeyCode::Char('s') => Some(Message::StartSearch),
+            KeyCode::Char('p') => Some(Message::TogglePreview),
             _ => None,
         },
         CurrentArea::SavePopup => match key_event.code {
@@ -513,19 +520,26 @@ fn update(
             app.current_area = CurrentArea::Pages;
             app.reset_cursor();
         }
+        Message::TogglePreview => app.show_preview = !app.show_preview,
+        Message::ToggleHelp => app.show_help = !app.show_help,
     }
     Ok(None)
 }
 
 fn draw(frame: &mut Frame, app: &mut App) {
     let main_title = Line::from("Concmd".bold());
-    // Get the relevant instructions for each area
-    let instructions = match &app.current_area {
-        CurrentArea::Spaces => Line::from("[r]efresh spaces "),
-        CurrentArea::Pages => Line::from(
-            "[r]efresh pages (clear search) | [n]ew page | [d]elete page | [s]earch pages",
-        ),
-        _ => Line::from(""),
+    // Get the relevant instructions for each area if show_help is on
+    let instructions = if app.show_help {
+        match &app.current_area {
+            CurrentArea::Spaces => Line::from("[r]efresh spaces | [q]uit | ? to close help "),
+            CurrentArea::Pages => Line::from(
+                "[r]efresh pages (clear search) | [n]ew page | [d]elete page | [s]earch pages | toggle [p]review | [q]uit | ? to close help ",
+            ),
+            CurrentArea::SavePopup => Line::from("[q]uit (without saving) "),
+            _ => Line::from("[q]uit "),
+        }
+    } else {
+        Line::from("press ? for help")
     };
     // Borderless block to hold the main title and the area instructions
     let container_block = Block::new()
@@ -590,8 +604,11 @@ fn draw(frame: &mut Frame, app: &mut App) {
             );
         frame.render_stateful_widget(page_list, layout[1], &mut app.page_list_state);
 
-        // If there's a page selected, render a short preview of the content to the right
-        if let Some(selected_page) = app.get_selected_page() {
+        // If there's a page selected, render a short preview of the content to the right if the
+        // app is set to show previews
+        if let Some(selected_page) = app.get_selected_page()
+            && app.show_preview
+        {
             let preview_text = actions::get_page_preview(&selected_page, 1000)
                 .expect("should always be able to preview the page");
             let preview_text_lines = preview_text.lines().count();

@@ -4,7 +4,7 @@ mod conf_api;
 mod tui;
 
 use anyhow::{Context, Result};
-use serde::{de::Error, Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, de::Error};
 use std::fs::File;
 use std::{
     io::Read,

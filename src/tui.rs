@@ -1,7 +1,7 @@
-use crate::conf_api::{Named, Page, Space};
 use crate::Config;
+use crate::conf_api::{Named, Page, Space};
 
-use anyhow::{anyhow, Ok, Result};
+use anyhow::{Ok, Result, anyhow};
 use cursive::views::{Dialog, SelectView};
 use cursive::{Cursive, CursiveExt};
 

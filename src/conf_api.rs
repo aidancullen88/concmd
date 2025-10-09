@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Ok, Result};
+use anyhow::{Ok, Result, anyhow, bail};
 use reqwest::blocking;
 use serde::{Deserialize, Serialize};
 use std::fmt;
