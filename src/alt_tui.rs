@@ -29,7 +29,7 @@ use anyhow::{Result, bail};
 */
 
 // Holds the entire state of the app
-pub struct App {
+struct App {
     pub space_list: Vec<Space>,
     pub page_list: Vec<Page>,
     // Holds the ratatui list state (selected item) for each list
@@ -43,22 +43,26 @@ pub struct App {
     // Holds the saved states for edited pages for display in the pages list
     pub page_states_map: HashMap<String, PageState>,
     pub new_page_title: String,
+    // "Universal" cursor for text entry fields. Make sure to clear after using!
     pub cursor_negative_offset: usize,
     pub search: Search,
+    // Toggles for keybinds to turn features on and off
     pub show_preview: bool,
     pub show_help: bool,
 }
 
-pub struct Search {
-    pub current_search: String,
-    pub search_active: bool,
+struct Search {
+    current_search: String,
+    search_active: bool,
 }
 
 impl App {
-    pub fn new(space_list: Vec<Space>) -> App {
+    fn new(space_list: Vec<Space>) -> App {
         App {
             space_list,
             space_list_state: ListState::default(),
+            // Empty list displays the same as None, and we don't have to unwrap the option every
+            // time we check the list
             page_list: vec![],
             page_list_state: ListState::default(),
             current_area: CurrentArea::Spaces,
@@ -76,14 +80,14 @@ impl App {
         }
     }
 
-    pub fn load_pages(&mut self, config: &Config, space_id: &str) -> Result<()> {
+    fn load_pages(&mut self, config: &Config, space_id: &str) -> Result<()> {
         self.page_list = actions::load_page_list_for_space(config, space_id)?;
         Ok(())
     }
 
     // Gets the currently selected space based on the app state
     // Combines the space list and the space list state
-    pub fn get_selected_space(&self) -> Option<Space> {
+    fn get_selected_space(&self) -> Option<Space> {
         if let Some(selected_index) = self.space_list_state.selected() {
             return self.space_list.get(selected_index).cloned();
         }
@@ -94,7 +98,7 @@ impl App {
     // Combines the page list and page list state
     // This is much more likely to return None than the space function above
     // as there is often no page selected (when changing space options for instance)
-    pub fn get_selected_page(&self) -> Option<Page> {
+    fn get_selected_page(&self) -> Option<Page> {
         if let Some(selected_index) = self.page_list_state.selected() {
             return self.page_list.get(selected_index).cloned();
         }
@@ -103,7 +107,7 @@ impl App {
 
     // Helper functions that enable both lists to be manipulated without duplicate calls
     // Also handle list wrapping
-    pub fn list_next(&mut self) {
+    fn list_next(&mut self) {
         let (list_state, list_length) = match self.current_area {
             CurrentArea::Spaces => {
                 let list_length = self.space_list.len();
@@ -113,7 +117,7 @@ impl App {
                 let list_length = self.page_list.len();
                 (&mut self.page_list_state, list_length)
             }
-            // Nav keys don't do anything while the popup is active, so return
+            // List nav keys don't do anything unless we're focused on a list, so return
             _ => return,
         };
         if let Some(index) = list_state.selected() {
@@ -129,11 +133,11 @@ impl App {
         list_state.select_first();
     }
 
-    pub fn list_previous(&mut self) {
+    fn list_previous(&mut self) {
         let list_state = match self.current_area {
             CurrentArea::Spaces => &mut self.space_list_state,
             CurrentArea::Pages => &mut self.page_list_state,
-            // Nav keys don't do anything while the popup is active, so return
+            // List nav keys don't do anything unless we're focused on a list, so return
             _ => return,
         };
         if let Some(index) = list_state.selected() {
@@ -149,9 +153,9 @@ impl App {
         list_state.select_last();
     }
 
-    pub fn refresh_current_list(&mut self, config: &Config) -> Result<()> {
-        match self.current_area {
-            CurrentArea::Pages | CurrentArea::SearchPopup => self.load_pages(
+    fn refresh_current_list(&mut self, config: &Config) -> Result<()> {
+        match &self.current_area {
+            CurrentArea::Pages => self.load_pages(
                 config,
                 &self
                     .get_selected_space()
@@ -162,11 +166,11 @@ impl App {
                 self.space_list = actions::load_space_list(config)?;
                 Ok(())
             }
-            _ => bail!("Cannot refresh this area"),
+            s => panic!("Refresh should not be called from {:?}", s),
         }
     }
 
-    pub fn backspace_text(&mut self) {
+    fn backspace_text(&mut self) {
         let current_text = match self.current_area {
             CurrentArea::NewPagePopup => &mut self.new_page_title,
             CurrentArea::SearchPopup => &mut self.search.current_search,
@@ -177,12 +181,13 @@ impl App {
         if (current_length != 0) && (current_length != self.cursor_negative_offset) {
             // Shouldn't be able to error because of the check above but sat sub just in case
             let current_cursor_position =
+            // +1 because we remove the text "before" the cursor
                 current_length.saturating_sub(self.cursor_negative_offset + 1);
             current_text.remove(current_cursor_position);
         }
     }
 
-    pub fn cursor_left(&mut self) {
+    fn cursor_left(&mut self) {
         let current_text = match self.current_area {
             CurrentArea::NewPagePopup => &mut self.new_page_title,
             CurrentArea::SearchPopup => &mut self.search.current_search,
@@ -196,12 +201,12 @@ impl App {
         };
     }
 
-    pub fn cursor_right(&mut self) {
+    fn cursor_right(&mut self) {
         // Decrease the offset, saturating at 0
         self.cursor_negative_offset = self.cursor_negative_offset.saturating_sub(1);
     }
 
-    pub fn type_char(&mut self, char: char) {
+    fn type_char(&mut self, char: char) {
         let current_text = match self.current_area {
             CurrentArea::NewPagePopup => &mut self.new_page_title,
             CurrentArea::SearchPopup => &mut self.search.current_search,
@@ -212,7 +217,7 @@ impl App {
     }
 
     // Should be called any time the text entry box is exited
-    pub fn reset_cursor(&mut self) {
+    fn reset_cursor(&mut self) {
         self.cursor_negative_offset = 0;
     }
 }
@@ -249,14 +254,14 @@ enum Message {
 // Possible states for an edited page to end up in
 // Note that there is an implicit third option "not edited"
 #[derive(Clone, Debug)]
-pub enum PageState {
+enum PageState {
     NotSaved,
     Saved,
 }
 
 // Represents the current list the user is selecting
 #[derive(Clone, Debug)]
-pub enum CurrentArea {
+enum CurrentArea {
     Spaces,
     Pages,
     SavePopup,
@@ -416,15 +421,15 @@ fn update(
             }
         }
         Message::RejectSave => {
-            if let CurrentArea::SavePopup = app.current_area {
-                if let Some(page) = app.get_selected_page() {
-                    app.current_area = CurrentArea::Pages;
-                    // Save the page ID to the map to flag as not saved in the UI
-                    app.page_states_map.insert(
-                        page.id.expect("Page from API should always have an ID"),
-                        PageState::NotSaved,
-                    );
-                }
+            if let CurrentArea::SavePopup = app.current_area
+                && let Some(page) = app.get_selected_page()
+            {
+                app.current_area = CurrentArea::Pages;
+                // Save the page ID to the map to flag as not saved in the UI
+                app.page_states_map.insert(
+                    page.id.expect("Page from API should always have an ID"),
+                    PageState::NotSaved,
+                );
             }
         }
         Message::Save => {
@@ -592,7 +597,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
         let page_date_aligned_list = zip(page_marked_list, page_dates_list).map(|(p, d)| {
             let page_name_len = p.len();
             let space = block_area.saturating_sub(page_name_len).saturating_sub(5);
-            return format!("{}  {:>width$}", p, d, width = space);
+            format!("{}  {:>width$}", p, d, width = space)
         });
 
         let page_list = List::new(page_date_aligned_list)

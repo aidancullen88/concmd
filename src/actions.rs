@@ -81,10 +81,7 @@ pub fn view_pages(config: &Config) -> Result<()> {
         Some(Tui::Cursive) => {
             let mut siv = Cursive::default();
             siv.set_user_data(config.clone());
-            let id = match crate::tui::display(&mut siv) {
-                Ok(id) => id,
-                Err(e) => return Err(e),
-            };
+            let id = crate::tui::display(&mut siv)?;
             edit_id(config, &id)
         }
         // Default to ratatui if option not set
@@ -170,7 +167,7 @@ fn save_edit_page(config: &Config, page: &mut Page) -> Result<PathBuf> {
     Ok(file_path)
 }
 
-fn save_page_to_file(location: &Path, id: &String, body: &String) -> Result<PathBuf> {
+fn save_page_to_file(location: &Path, id: &str, body: &str) -> Result<PathBuf> {
     let converted_body = convert_html_to_md(body)?;
     let mut file_path = location.to_path_buf();
     file_path.push(id);
