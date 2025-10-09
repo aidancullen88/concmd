@@ -595,9 +595,9 @@ fn draw(frame: &mut Frame, app: &mut App) {
 
         // Iterate through the page titles, and add the dates in page_date_list to each page title
         let page_date_aligned_list = zip(page_marked_list, page_dates_list).map(|(p, d)| {
-            let page_name_len = p.len();
-            let space = block_area.saturating_sub(page_name_len).saturating_sub(5);
-            format!("{}  {:>width$}", p, d, width = space)
+            let page_name_len = p.chars().count();
+            let space = block_area.saturating_sub(page_name_len).saturating_sub(3);
+            format!("{}{:>width$}", p, d, width = space)
         });
 
         let page_list = List::new(page_date_aligned_list)
@@ -766,10 +766,10 @@ fn map_saved_pages(item_list: &[Page], states_hash: &HashMap<String, PageState>)
             if let Some(page_id) = &i.id {
                 match states_hash.get(page_id) {
                     Some(PageState::Saved) => {
-                        format!("{} {}", "✓", i.get_name())
+                        format!("✓ {}", i.get_name())
                     }
                     Some(PageState::NotSaved) => {
-                        format!("{} {}", "✕", i.get_name())
+                        format!("  {}", i.get_name())
                     }
                     None => format!("  {}", i.get_name()),
                 }
