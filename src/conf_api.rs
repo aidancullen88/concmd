@@ -123,7 +123,7 @@ impl Page {
         }
     }
 
-    pub fn get_page_by_id(api: &Api, id: &String) -> Result<Page> {
+    pub fn get_page_by_id(api: &Api, id: &str) -> Result<Page> {
         let resp = send_request(
             api,
             RequestType::Get,

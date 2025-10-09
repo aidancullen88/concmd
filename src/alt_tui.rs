@@ -614,7 +614,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
         if let Some(selected_page) = app.get_selected_page()
             && app.show_preview
         {
-            let preview_text = actions::get_page_preview(&selected_page, 1000)
+            let preview_text = actions::get_page_preview(&selected_page, 1500)
                 .expect("should always be able to preview the page");
             let preview_text_lines = preview_text.lines().count();
             // Make a box the same size as the amount of lines in the preview
@@ -624,13 +624,10 @@ fn draw(frame: &mut Frame, app: &mut App) {
             let block = Block::bordered()
                 .title(title.centered())
                 .border_set(border::PLAIN);
-            let preview = Paragraph::new(Text::from(
-                actions::get_page_preview(&selected_page, 1000)
-                    .expect("Page should always be convertable"),
-            ))
-            .wrap(Wrap { trim: false })
-            .block(block)
-            .left_aligned();
+            let preview = Paragraph::new(Text::from(preview_text))
+                .wrap(Wrap { trim: false })
+                .block(block)
+                .left_aligned();
 
             frame.render_widget(preview, internal_layout[0]);
         }

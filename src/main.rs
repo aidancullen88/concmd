@@ -24,16 +24,17 @@ struct Args {
 #[derive(Debug, clap::Subcommand)]
 enum Action {
     #[clap(group(
-        ArgGroup::new("edits")
-        .multiple(false)
+        ArgGroup::new("edit_mode")
         .required(true)
         .args(&["id", "last"]),
     ))]
     Edit {
-        #[arg(long, action)]
+        #[arg(long)]
         last: bool,
         #[arg(short, long)]
         id: Option<String>,
+        #[arg(short, long, requires = "id")]
+        preview: bool,
     },
     View,
     Upload {
@@ -134,13 +135,22 @@ fn main() {
     let cli = Args::parse();
 
     match cli.action {
-        Action::Edit { id, last } => {
+        Action::Edit { id, last, preview } => {
+            // FIXME: this logic sucks, refactor pls. Also says "page uploaded" when it wasn't
             let result = if last {
                 actions::edit_last_page(&config)
             } else {
                 // ID will always be present here, but check is required
-                if let Some(id) = id {
+                if let Some(id) = &id
+                    && !preview
+                {
                     actions::edit_id(&config, &id)
+                } else if let Some(id) = id
+                    && preview
+                {
+                    let page = actions::get_page_by_id(&config.api, &id).unwrap();
+                    println!("{}", actions::get_page_preview(&page, 2000).unwrap());
+                    Ok(())
                 } else {
                     panic!("ID cannot be missing if last is false!")
                 }

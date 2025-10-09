@@ -149,8 +149,12 @@ pub fn delete_page(api: &Api, page: &mut Page) -> Result<()> {
 // Get a truncated view of the
 pub fn get_page_preview(page: &Page, preview_length: usize) -> Result<String> {
     let body = page.get_body();
-    // Get the first 50 chars from the string and convert to md
+    // Get the first n chars from the string and convert to md
     convert_html_to_md(&body.chars().take(preview_length).collect::<String>())
+}
+
+pub fn get_page_by_id(api: &Api, id: &str) -> Result<Page> {
+    Page::get_page_by_id(api, id)
 }
 
 // Worker functions
