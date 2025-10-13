@@ -4,7 +4,11 @@ mod conf_api;
 mod tui;
 
 use anyhow::{Context, Result};
-use serde::{Deserialize, Deserializer, de::Error};
+use serde::Deserialize;
+
+#[cfg(target_family = "unix")]
+use serde::{Deserializer, de::Error};
+
 use std::fs::File;
 use std::{
     io::Read,
@@ -56,11 +60,23 @@ enum Action {
 // Config structure. Note deserialize_with for save_location, see fn
 // Deserialisation for history location requires a different function to deal with the optional
 // case
+#[cfg(target_family = "unix")]
 #[derive(Deserialize, Debug, Clone)]
 struct Config {
     #[serde(deserialize_with = "from_tilde_path")]
     save_location: PathBuf,
     #[serde(default, deserialize_with = "from_tilde_path_optional")]
+    history_location: Option<PathBuf>,
+    auto_sync: Option<bool>,
+    api: Api,
+    editor: Option<Editor>,
+    tui: Option<Tui>,
+}
+
+#[cfg(target_family = "windows")]
+#[derive(Deserialize, Debug, Clone)]
+struct Config {
+    save_location: PathBuf,
     history_location: Option<PathBuf>,
     auto_sync: Option<bool>,
     api: Api,
@@ -102,6 +118,7 @@ struct Editor {
 
 // Implements a custom deserializer for save_location that automatically
 // expands the tilde to the users home directory
+#[cfg(target_family = "unix")]
 fn from_tilde_path<'de, D>(deserializer: D) -> Result<PathBuf, D::Error>
 where
     D: Deserializer<'de>,
@@ -111,6 +128,7 @@ where
 }
 
 // Same as the above deserialiser but handles the optional case for history_location
+#[cfg(target_family = "unix")]
 fn from_tilde_path_optional<'de, D>(deserializer: D) -> Result<Option<PathBuf>, D::Error>
 where
     D: Deserializer<'de>,
@@ -184,6 +202,7 @@ fn main() {
             },
         },
         Action::Upload { path, title, edit } => {
+            #[cfg(target_family = "unix")]
             let expanded_path = match expanduser::expanduser(path) {
                 Ok(ex_path) => ex_path,
                 Err(_) => {
@@ -191,6 +210,9 @@ fn main() {
                     return;
                 }
             };
+            #[cfg(target_family = "windows")]
+            let expanded_path = PathBuf::from(path);
+
             match actions::upload_existing_page(&config, &edit, &expanded_path, title) {
                 Ok(_) => println!("New page successfully created!"),
                 Err(e) if e.to_string() == "USER_CANCEL" => {
@@ -221,7 +243,7 @@ fn main() {
 // ~/.config/concmd directory.
 #[cfg(target_family = "unix")]
 fn get_config() -> Result<Config> {
-    let mut home_dir = home::home_dir().expect("home dir should always exist");
+    let mut home_dir = dirs::home_dir().expect("home dir should always exist");
     home_dir.push(".config/concmd/config.toml");
 
     Config::read_config(&home_dir)
@@ -229,8 +251,11 @@ fn get_config() -> Result<Config> {
 
 #[cfg(target_family = "windows")]
 fn get_config() -> Result<Config> {
-    let mut home_dir = home::home_dir().expect("home dir should always exist");
-    home_dir.push("/AppData/Roaming/concmd/config.toml");
+    let mut home_dir = dirs::home_dir().expect("home dir should always exist");
+    println!("{:?}", home_dir);
+    home_dir.push("AppData\\Roaming\\concmd\\config.toml");
+
+    println!("{:?}", home_dir);
 
     Config::read_config(&home_dir)
 }
