@@ -303,7 +303,7 @@ impl App {
 
     // Wrapper for sort_pages that checks and saves the current list states
     fn set_sort(&mut self) {
-        self.sort.saved_state = (self.sort.type_state.clone(), self.sort.dir_state.clone());
+        self.sort.saved_state = (self.sort.type_state.clone(), self.sort.dir_state);
         if let Some((selected_type, selected_dir)) = self.get_selected_sort() {
             self.sort_pages(selected_type, selected_dir);
         };

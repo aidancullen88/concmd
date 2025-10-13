@@ -101,7 +101,7 @@ struct Editor {
 }
 
 // Implements a custom deserializer for save_location that automatically
-// expands the tilde to the users home directory (unix only)
+// expands the tilde to the users home directory
 fn from_tilde_path<'de, D>(deserializer: D) -> Result<PathBuf, D::Error>
 where
     D: Deserializer<'de>,
@@ -219,9 +219,18 @@ fn main() {
 
 // Helper function to add the home dir to the config path. Config is always expected to live in the
 // ~/.config/concmd directory.
+#[cfg(target_family = "unix")]
 fn get_config() -> Result<Config> {
     let mut home_dir = home::home_dir().expect("home dir should always exist");
     home_dir.push(".config/concmd/config.toml");
+
+    Config::read_config(&home_dir)
+}
+
+#[cfg(target_family = "windows")]
+fn get_config() -> Result<Config> {
+    let mut home_dir = home::home_dir().expect("home dir should always exist");
+    home_dir.push("/AppData/Roaming/concmd/config.toml");
 
     Config::read_config(&home_dir)
 }
