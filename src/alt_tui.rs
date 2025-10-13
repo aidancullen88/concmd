@@ -61,10 +61,9 @@ struct Search {
 
 struct Sort {
     type_state: ListState,
-    dir_state: ListState,
+    dir_state: SortDirection,
     sort_types_array: [SortType; 2],
-    sort_dir_array: [SortDirection; 2],
-    saved_states: (ListState, ListState),
+    saved_state: (ListState, SortDirection),
 }
 
 #[derive(Clone, Copy)]
@@ -124,14 +123,9 @@ impl App {
                     new.select_first();
                     new
                 },
-                dir_state: {
-                    let mut new = ListState::default();
-                    new.select_first();
-                    new
-                },
+                dir_state: SortDirection::Asc,
                 sort_types_array: [SortType::CreatedOn, SortType::Title],
-                sort_dir_array: [SortDirection::Asc, SortDirection::Desc],
-                saved_states: (ListState::default(), ListState::default()),
+                saved_state: (ListState::default(), SortDirection::Asc),
             },
         }
     }
@@ -298,12 +292,10 @@ impl App {
     // Get the states of the sort options and pick the corresponding sort type from the saved
     // arrays
     fn get_selected_sort(&self) -> Option<(SortType, SortDirection)> {
-        if let Some(selected_type) = self.sort.type_state.selected()
-            && let Some(selected_dir) = self.sort.dir_state.selected()
-        {
+        if let Some(selected_type) = self.sort.type_state.selected() {
             return Some((
                 self.sort.sort_types_array[selected_type],
-                self.sort.sort_dir_array[selected_dir],
+                self.sort.dir_state,
             ));
         };
         None
@@ -311,27 +303,22 @@ impl App {
 
     // Wrapper for sort_pages that checks and saves the current list states
     fn set_sort(&mut self) {
-        self.sort.saved_states = (self.sort.type_state.clone(), self.sort.dir_state.clone());
+        self.sort.saved_state = (self.sort.type_state.clone(), self.sort.dir_state.clone());
         if let Some((selected_type, selected_dir)) = self.get_selected_sort() {
             self.sort_pages(selected_type, selected_dir);
         };
     }
 
     fn reset_sort_state(&mut self) {
-        let (type_state, dir_state) = self.sort.saved_states.clone();
+        let (type_state, dir_state) = self.sort.saved_state.clone();
         self.sort.type_state = type_state;
         self.sort.dir_state = dir_state;
     }
 
     fn toggle_sort_dir(&mut self) {
-        if let Some(index) = self.sort.dir_state.selected() {
-            if index == 0 {
-                self.sort.dir_state.select_last();
-            } else {
-                self.sort.dir_state.select_first();
-            }
-        } else {
-            self.sort.dir_state.select_first();
+        match self.sort.dir_state {
+            SortDirection::Asc => self.sort.dir_state = SortDirection::Desc,
+            SortDirection::Desc => self.sort.dir_state = SortDirection::Asc,
         }
     }
 }
@@ -866,7 +853,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
         }
         CurrentArea::SortPopup => {
             let title = Line::from("Order pages".bold());
-            let popup_area = popup_area(frame.area(), 40, 10);
+            let popup_area = popup_area(frame.area(), 50, 10);
             let order_block = Block::bordered()
                 .border_style(Style::new().yellow())
                 .padding(Padding {
@@ -878,10 +865,13 @@ fn draw(frame: &mut Frame, app: &mut App) {
                 .title(title.centered());
             frame.render_widget(Clear, popup_area);
             frame.render_widget(order_block, popup_area);
+
             let inner_layout = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
                 .split(popup_area);
+
+            // Render sort type list
             let type_block = Block::new().padding(Padding {
                 left: 1,
                 right: 1,
@@ -896,22 +886,19 @@ fn draw(frame: &mut Frame, app: &mut App) {
                         .fg(ratatui::style::Color::Black),
                 )
                 .block(type_block);
+            frame.render_stateful_widget(type_list, inner_layout[0], &mut app.sort.type_state);
+
+            // Render current ordering
             let dir_block = Block::new().padding(Padding {
                 left: 1,
                 right: 1,
                 top: 2,
                 bottom: 1,
             });
-            let dir_strings = app.sort.sort_dir_array.map(|d| format!("{}", d));
-            let dir_list = List::new(dir_strings)
-                .highlight_style(
-                    Style::default()
-                        .bg(ratatui::style::Color::LightYellow)
-                        .fg(ratatui::style::Color::Black),
-                )
+            let current_dir = Paragraph::new(format!("Order: {}", app.sort.dir_state))
+                .wrap(Wrap { trim: false })
                 .block(dir_block);
-            frame.render_stateful_widget(type_list, inner_layout[0], &mut app.sort.type_state);
-            frame.render_stateful_widget(dir_list, inner_layout[1], &mut app.sort.dir_state);
+            frame.render_widget(current_dir, inner_layout[1]);
         }
         _ => {}
     }
