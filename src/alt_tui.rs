@@ -1,4 +1,6 @@
+use std::cmp::Reverse;
 use std::collections::HashMap;
+use std::fmt;
 use std::io::stdout;
 use std::iter::zip;
 use std::path::PathBuf;
@@ -49,11 +51,50 @@ struct App {
     // Toggles for keybinds to turn features on and off
     pub show_preview: bool,
     pub show_help: bool,
+    pub sort: Sort,
 }
 
 struct Search {
     current_search: String,
     search_active: bool,
+}
+
+struct Sort {
+    type_state: ListState,
+    dir_state: ListState,
+    sort_types_array: [SortType; 2],
+    sort_dir_array: [SortDirection; 2],
+    saved_states: (ListState, ListState),
+}
+
+#[derive(Clone, Copy)]
+enum SortType {
+    Title,
+    CreatedOn,
+}
+
+impl fmt::Display for SortType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SortType::Title => write!(f, "Title"),
+            SortType::CreatedOn => write!(f, "Created Date"),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum SortDirection {
+    Asc,
+    Desc,
+}
+
+impl fmt::Display for SortDirection {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SortDirection::Asc => write!(f, "Asc"),
+            SortDirection::Desc => write!(f, "Desc"),
+        }
+    }
 }
 
 impl App {
@@ -77,12 +118,43 @@ impl App {
             },
             show_preview: false,
             show_help: false,
+            sort: Sort {
+                type_state: {
+                    let mut new = ListState::default();
+                    new.select_first();
+                    new
+                },
+                dir_state: {
+                    let mut new = ListState::default();
+                    new.select_first();
+                    new
+                },
+                sort_types_array: [SortType::CreatedOn, SortType::Title],
+                sort_dir_array: [SortDirection::Asc, SortDirection::Desc],
+                saved_states: (ListState::default(), ListState::default()),
+            },
         }
     }
 
     fn load_pages(&mut self, config: &Config, space_id: &str) -> Result<()> {
         self.page_list = actions::load_page_list_for_space(config, space_id)?;
+        self.sort_pages(SortType::CreatedOn, SortDirection::Asc);
         Ok(())
+    }
+
+    fn sort_pages(&mut self, sort_type: SortType, sort_dir: SortDirection) {
+        match sort_type {
+            SortType::Title => match sort_dir {
+                SortDirection::Asc => self.page_list.sort_by_key(|a| a.title.clone()),
+                SortDirection::Desc => self.page_list.sort_by_key(|a| Reverse(a.title.clone())),
+            },
+            SortType::CreatedOn => match sort_dir {
+                SortDirection::Asc => self.page_list.sort_by_key(|a| a.get_date_created()),
+                SortDirection::Desc => self
+                    .page_list
+                    .sort_by_key(|a| Reverse(a.get_date_created())),
+            },
+        }
     }
 
     // Gets the currently selected space based on the app state
@@ -117,6 +189,7 @@ impl App {
                 let list_length = self.page_list.len();
                 (&mut self.page_list_state, list_length)
             }
+            CurrentArea::SortPopup => (&mut self.sort.type_state, self.sort.sort_types_array.len()),
             // List nav keys don't do anything unless we're focused on a list, so return
             _ => return,
         };
@@ -137,6 +210,7 @@ impl App {
         let list_state = match self.current_area {
             CurrentArea::Spaces => &mut self.space_list_state,
             CurrentArea::Pages => &mut self.page_list_state,
+            CurrentArea::SortPopup => &mut self.sort.type_state,
             // List nav keys don't do anything unless we're focused on a list, so return
             _ => return,
         };
@@ -220,6 +294,46 @@ impl App {
     fn reset_cursor(&mut self) {
         self.cursor_negative_offset = 0;
     }
+
+    // Get the states of the sort options and pick the corresponding sort type from the saved
+    // arrays
+    fn get_selected_sort(&self) -> Option<(SortType, SortDirection)> {
+        if let Some(selected_type) = self.sort.type_state.selected()
+            && let Some(selected_dir) = self.sort.dir_state.selected()
+        {
+            return Some((
+                self.sort.sort_types_array[selected_type],
+                self.sort.sort_dir_array[selected_dir],
+            ));
+        };
+        None
+    }
+
+    // Wrapper for sort_pages that checks and saves the current list states
+    fn set_sort(&mut self) {
+        self.sort.saved_states = (self.sort.type_state.clone(), self.sort.dir_state.clone());
+        if let Some((selected_type, selected_dir)) = self.get_selected_sort() {
+            self.sort_pages(selected_type, selected_dir);
+        };
+    }
+
+    fn reset_sort_state(&mut self) {
+        let (type_state, dir_state) = self.sort.saved_states.clone();
+        self.sort.type_state = type_state;
+        self.sort.dir_state = dir_state;
+    }
+
+    fn toggle_sort_dir(&mut self) {
+        if let Some(index) = self.sort.dir_state.selected() {
+            if index == 0 {
+                self.sort.dir_state.select_last();
+            } else {
+                self.sort.dir_state.select_first();
+            }
+        } else {
+            self.sort.dir_state.select_first();
+        }
+    }
 }
 
 // Represents all possible user actions in the app
@@ -249,6 +363,10 @@ enum Message {
     CancelSearch,
     TogglePreview,
     ToggleHelp,
+    StartSort,
+    ConfirmSort,
+    CancelSort,
+    ToggleSortDir,
 }
 
 // Possible states for an edited page to end up in
@@ -268,6 +386,7 @@ enum CurrentArea {
     NewPagePopup,
     DeletePopup,
     SearchPopup,
+    SortPopup,
 }
 
 // Entry point for the TUI
@@ -333,6 +452,7 @@ fn handle_key_event(key_event: KeyEvent, app: &App) -> Option<Message> {
             KeyCode::Char('d') => Some(Message::DeletePage),
             KeyCode::Char('s') => Some(Message::StartSearch),
             KeyCode::Char('p') => Some(Message::TogglePreview),
+            KeyCode::Char('o') => Some(Message::StartSort),
             _ => None,
         },
         CurrentArea::SavePopup => match key_event.code {
@@ -361,6 +481,14 @@ fn handle_key_event(key_event: KeyEvent, app: &App) -> Option<Message> {
             KeyCode::Left => Some(Message::CursorLeft),
             KeyCode::Right => Some(Message::CursorRight),
             KeyCode::Char(value) => Some(Message::TypeChar(value)),
+            _ => None,
+        },
+        CurrentArea::SortPopup => match key_event.code {
+            KeyCode::Enter => Some(Message::ConfirmSort),
+            KeyCode::Esc => Some(Message::CancelSort),
+            KeyCode::Up => Some(Message::ListPrevious),
+            KeyCode::Down => Some(Message::ListNext),
+            KeyCode::Char('d') => Some(Message::ToggleSortDir),
             _ => None,
         },
     }
@@ -527,6 +655,18 @@ fn update(
         }
         Message::TogglePreview => app.show_preview = !app.show_preview,
         Message::ToggleHelp => app.show_help = !app.show_help,
+        Message::StartSort => {
+            app.current_area = CurrentArea::SortPopup;
+        }
+        Message::ConfirmSort => {
+            app.set_sort();
+            app.current_area = CurrentArea::Pages;
+        }
+        Message::CancelSort => {
+            app.reset_sort_state();
+            app.current_area = CurrentArea::Pages;
+        }
+        Message::ToggleSortDir => app.toggle_sort_dir(),
     }
     Ok(None)
 }
@@ -538,9 +678,10 @@ fn draw(frame: &mut Frame, app: &mut App) {
         match &app.current_area {
             CurrentArea::Spaces => Line::from("[r]efresh spaces | [q]uit | ? to close help "),
             CurrentArea::Pages => Line::from(
-                "[r]efresh pages (clear search) | [n]ew page | [d]elete page | [s]earch pages | toggle [p]review | [q]uit | ? to close help ",
+                "[r]efresh pages (clear search) | [n]ew page | [d]elete page | [s]earch pages | [o]rder by | toggle [p]review | [q]uit | ? to close help ",
             ),
             CurrentArea::SavePopup => Line::from("[q]uit (without saving) "),
+            CurrentArea::SortPopup => Line::from("toggle [d]irection "),
             _ => Line::from("[q]uit "),
         }
     } else {
@@ -722,6 +863,55 @@ fn draw(frame: &mut Frame, app: &mut App) {
                     - app.cursor_negative_offset as u16,
                 area.y + 2,
             ));
+        }
+        CurrentArea::SortPopup => {
+            let title = Line::from("Order pages".bold());
+            let popup_area = popup_area(frame.area(), 40, 10);
+            let order_block = Block::bordered()
+                .border_style(Style::new().yellow())
+                .padding(Padding {
+                    left: 1,
+                    right: 1,
+                    top: 1,
+                    bottom: 1,
+                })
+                .title(title.centered());
+            frame.render_widget(Clear, popup_area);
+            frame.render_widget(order_block, popup_area);
+            let inner_layout = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+                .split(popup_area);
+            let type_block = Block::new().padding(Padding {
+                left: 1,
+                right: 1,
+                top: 2,
+                bottom: 1,
+            });
+            let type_strings = app.sort.sort_types_array.map(|t| format!("{}", t));
+            let type_list = List::new(type_strings)
+                .highlight_style(
+                    Style::default()
+                        .bg(ratatui::style::Color::LightYellow)
+                        .fg(ratatui::style::Color::Black),
+                )
+                .block(type_block);
+            let dir_block = Block::new().padding(Padding {
+                left: 1,
+                right: 1,
+                top: 2,
+                bottom: 1,
+            });
+            let dir_strings = app.sort.sort_dir_array.map(|d| format!("{}", d));
+            let dir_list = List::new(dir_strings)
+                .highlight_style(
+                    Style::default()
+                        .bg(ratatui::style::Color::LightYellow)
+                        .fg(ratatui::style::Color::Black),
+                )
+                .block(dir_block);
+            frame.render_stateful_widget(type_list, inner_layout[0], &mut app.sort.type_state);
+            frame.render_stateful_widget(dir_list, inner_layout[1], &mut app.sort.dir_state);
         }
         _ => {}
     }

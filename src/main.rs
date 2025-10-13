@@ -145,7 +145,7 @@ fn main() {
                 if let Some(id) = &id
                     && !preview
                 {
-                    actions::edit_id(&config, &id)
+                    actions::edit_id(&config, id)
                 } else if let Some(id) = id
                     && preview
                 {
