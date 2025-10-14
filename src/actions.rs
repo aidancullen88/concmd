@@ -62,16 +62,15 @@ pub fn edit_page(config: &Config, page: &mut Page) -> Result<PathBuf> {
 }
 
 pub fn edit_last_page(config: &Config) -> Result<()> {
-    let history_path = get_history_path_or_default(config);
+    let history_path = get_history_path_or_default(config)?;
+    let history_id = get_history_id(&history_path)?;
+    edit_id(config, &history_id)
+}
 
-    if std::fs::metadata(&history_path).is_err() {
-        bail!("Directory for history file does not exist");
-    }
-
-    let history_id = std::fs::read(history_path)?;
-    let id_string = String::from_utf8(history_id)?;
-
-    edit_id(config, &id_string.trim().to_string())
+pub fn get_last_page(config: &Config) -> Result<Page> {
+    let history_path = get_history_path_or_default(config)?;
+    let history_id = get_history_id(&history_path)?;
+    get_page_by_id(&config.api, &history_id)
 }
 
 // Entry point for both TUI options
@@ -182,7 +181,7 @@ fn save_page_to_file(location: &Path, id: &str, body: &str) -> Result<PathBuf> {
 }
 
 fn update_edited_history(config: &Config, id: &String) -> Result<()> {
-    let history_path = get_history_path_or_default(config);
+    let history_path = get_history_path_or_default(config)?;
     std::fs::write(history_path, id)?;
     Ok(())
 }
@@ -245,13 +244,23 @@ fn upload_page(api: &Api, page: &mut Page, file_path: Option<&PathBuf>) -> Resul
     }
 }
 
-fn get_history_path_or_default(config: &Config) -> PathBuf {
+fn get_history_path_or_default(config: &Config) -> Result<PathBuf> {
     // If the user hasn't entered a history location in the config, default to the same location as
     // the saves
-    match &config.history_location {
+    let history_path = match &config.history_location {
         Some(path) => Path::new(path).join("history.txt"),
         None => config.save_location.clone().join("history.txt"),
+    };
+    if std::fs::metadata(&history_path).is_err() {
+        bail!("Directory for history file does not exist");
+    } else {
+        Ok(history_path)
     }
+}
+
+fn get_history_id(history_path: &Path) -> Result<String> {
+    let history_id = String::from_utf8(std::fs::read(history_path)?)?;
+    Ok(history_id)
 }
 
 fn select_space(api: &Api) -> Result<String> {

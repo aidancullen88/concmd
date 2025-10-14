@@ -27,6 +27,7 @@ struct Args {
 
 #[derive(Debug, clap::Subcommand)]
 enum Action {
+    // Require either the id or the --last arg
     #[clap(group(
         ArgGroup::new("edit_mode")
         .required(true)
@@ -36,9 +37,9 @@ enum Action {
         #[arg(long)]
         last: bool,
         #[arg(short, long)]
-        id: Option<String>,
-        #[arg(short, long, requires = "id")]
-        preview: bool,
+        id: String,
+        #[arg(short, long)]
+        preview: Option<u16>,
     },
     View,
     Upload {
@@ -156,31 +157,75 @@ fn main() {
         Action::Edit { id, last, preview } => {
             // FIXME: this logic sucks, refactor pls. Also says "page uploaded" when it wasn't
             // also maybe allow the user to give the preview length as an optional param
-            let result = if last {
-                actions::edit_last_page(&config)
+
+            if last && let Some(preview) = preview {
+                match actions::get_last_page(&config) {
+                    Ok(page) => {
+                        println!(
+                            "{}",
+                            actions::get_page_preview(&page, preview as usize).unwrap()
+                        );
+                    }
+                    Err(e) => eprintln!("ERROR: {}", e),
+                }
+            } else if last && let None = preview {
+                match actions::edit_last_page(&config) {
+                    Ok(_) => println!("Page edited successfully!"),
+                    Err(e) if e.to_string() == "USER_CANCEL" => {
+                        println!("Exited without syncing changes")
+                    }
+                    Err(e) => eprintln!("ERROR: {}", e),
+                }
+            } else if !last && let Some(preview) = preview {
+                match actions::get_page_by_id(&config.api, &id) {
+                    Ok(page) => {
+                        println!(
+                            "{}",
+                            actions::get_page_preview(&page, preview as usize).unwrap()
+                        );
+                    }
+                    Err(e) => eprintln!("ERROR: {}", e),
+                }
+            } else if !last && let None = preview {
+                match actions::edit_id(&config, &id) {
+                    Ok(_) => println!("Page edited successfully"),
+                    Err(e) if e.to_string() == "USER_CANCEL" => {
+                        println!("Exited without syncing changes")
+                    }
+                    Err(e) => eprintln!("ERROR: {}", e),
+                }
             } else {
-                // ID will always be present here, but check is required
-                if let Some(id) = &id
-                    && !preview
-                {
-                    actions::edit_id(&config, id)
-                } else if let Some(id) = id
-                    && preview
-                {
-                    let page = actions::get_page_by_id(&config.api, &id).unwrap();
-                    println!("{}", actions::get_page_preview(&page, 2000).unwrap());
-                    Ok(())
-                } else {
-                    panic!("ID cannot be missing if last is false!")
-                }
+                panic!(
+                    "Argument parsing resulted in invalid state. Args: id {}, last {}, preview {:?}",
+                    id, last, preview
+                );
             };
-            match result {
-                Ok(_) => println!("Page edited successfully!"),
-                Err(e) if e.to_string() == "USER_CANCEL" => {
-                    println!("Exited without syncing changes")
-                }
-                Err(e) => println!("ERROR: {}", e),
-            }
+
+            // let result = if last {
+            //     actions::edit_last_page(&config)
+            // } else {
+            //     // ID will always be present here, but check is required
+            //     if let Some(id) = &id
+            //         && !preview
+            //     {
+            //         actions::edit_id(&config, id)
+            //     } else if let Some(id) = id
+            //         && preview
+            //     {
+            //         let page = actions::get_page_by_id(&config.api, &id).unwrap();
+            //         println!("{}", actions::get_page_preview(&page, 2000).unwrap());
+            //         Ok(())
+            //     } else {
+            //         panic!("ID cannot be missing if last is false!")
+            //     }
+            // };
+            // match result {
+            //     Ok(_) => println!("Page edited successfully!"),
+            //     Err(e) if e.to_string() == "USER_CANCEL" => {
+            //         println!("Exited without syncing changes")
+            //     }
+            //     Err(e) => println!("ERROR: {}", e),
+            // }
         }
         Action::View => match config.tui {
             Some(Tui::Cursive) => match actions::view_pages(&config) {

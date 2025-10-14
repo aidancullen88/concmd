@@ -131,9 +131,17 @@ impl Page {
                 "https://{}/wiki/api/v2/pages/{}?body-format=editor",
                 api.confluence_domain, id
             ),
-        )?
-        .text()?;
-        Ok(serde_json::from_str::<Page>(&resp)?)
+        )?;
+        match resp.status().as_u16() {
+            200 => Ok(serde_json::from_str::<Page>(&resp.text()?)?),
+            _ => {
+                let page_error = serde_json::from_str::<GenericErrors>(&resp.text()?)?.get_error();
+                if page_error.code == "NOT_FOUND" {
+                    bail!("Page not found: {}", page_error.title)
+                }
+                bail!("Issue fetching page: {}", page_error.title)
+            }
+        }
     }
 
     pub fn update_page_by_id(&mut self, api: &Api) -> Result<Page> {
@@ -171,7 +179,7 @@ impl Page {
             c if *c < 300 => Ok(serde_json::from_str(&resp.text()?)?),
             c if *c >= 400 => {
                 let error = serde_json::from_str::<GenericErrors>(&resp.text()?)?;
-                bail!(error.get_error())
+                bail!(error.get_error().title)
             }
             _ => bail!("Unknown response: {}", resp.text()?),
         }
@@ -220,18 +228,17 @@ struct GenericErrors {
 #[derive(Deserialize, Debug)]
 struct PageError {
     // status: usize,
-    // code: String,
+    code: String,
     title: String,
     // detail: Option<String>,
 }
 
 impl GenericErrors {
-    fn get_error(self) -> String {
+    fn get_error(self) -> PageError {
         self.errors
             .into_iter()
             .next()
             .expect("Should always be at least one error object in list")
-            .title
     }
 }
 
