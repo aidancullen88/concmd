@@ -550,7 +550,7 @@ fn update(
         Message::Save => {
             if let CurrentArea::SavePopup = app.current_area {
                 if let Some(mut page) = app.get_selected_page() {
-                    actions::upload_edited_page(config, &mut page, app.edited_file_path.as_ref())?;
+                    actions::upload_page(&config.api, &mut page, app.edited_file_path.as_deref())?;
                     app.current_area = CurrentArea::Pages;
                     // Refresh the page list so that pages can be edited again
                     return Ok(Some(Message::Refresh));
@@ -589,11 +589,12 @@ fn update(
             app.reset_cursor();
         }
         Message::SaveNewPage => {
-            actions::new_page_tui(
+            actions::new_page(
                 config,
                 &app.get_selected_space()
                     .expect("Should always be a space selected"),
                 app.new_page_title.clone(),
+                None,
             )?;
             app.current_area = CurrentArea::Pages;
             app.reset_cursor();

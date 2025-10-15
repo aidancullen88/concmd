@@ -25,7 +25,7 @@ pub fn load_page_list_for_space(config: &Config, space_id: &str) -> Result<Vec<P
 pub fn edit_id(config: &Config, id: &String) -> Result<()> {
     // full workflow for page edit: pulls page, opens nvim, pushes page
     let mut page = Page::get_page_by_id(&config.api, id)?;
-    let file_path = save_and_edit_page(config, &mut page)?;
+    let file_path = edit_page(config, &mut page)?;
     match config.auto_sync {
         Some(true) => {
             println!("Page uploading...");
@@ -43,8 +43,7 @@ pub fn edit_id(config: &Config, id: &String) -> Result<()> {
             }
         }
     };
-
-    update_edited_history(config, id)
+    Ok(())
 }
 
 // Shortened workflow for TUI that does not handle upload
@@ -88,11 +87,9 @@ pub fn upload_existing_page(
     page_path: &PathBuf,
     title: String,
 ) -> Result<()> {
-    let user_space_id = select_space(&config.api)?;
-    // Make the new page struct to upload and then upload with the file at the provided path
-    let mut new_page = Page::new(title, user_space_id);
+    let user_space = select_space(&config.api)?;
     println!("Page Uploading...");
-    let mut uploaded_page = upload_page(&config.api, &mut new_page, Some(page_path))?;
+    let mut uploaded_page = new_page(config, &user_space, title, Some(page_path))?;
     if *should_edit {
         save_and_edit_page(config, &mut uploaded_page)?;
     };
@@ -104,12 +101,11 @@ pub fn upload_existing_page(
     )
 }
 
-pub fn create_new_page(config: &Config, should_edit: &bool, title: String) -> Result<()> {
+pub fn cli_new_page(config: &Config, should_edit: &bool, title: String) -> Result<()> {
     // Let the user select the space to upload to
-    let user_space_id = select_space(&config.api)?;
-    let mut new_page = Page::new(title, user_space_id);
+    let user_space = select_space(&config.api)?;
     println!("Page Uploading...");
-    let mut uploaded_page = upload_page(&config.api, &mut new_page, None)?;
+    let mut uploaded_page = new_page(config, &user_space, title, None)?;
     if *should_edit {
         save_and_edit_page(config, &mut uploaded_page)?;
     };
@@ -120,37 +116,50 @@ pub fn create_new_page(config: &Config, should_edit: &bool, title: String) -> Re
     }
 }
 
-pub fn new_page_tui(config: &Config, space: &Space, title: String) -> Result<()> {
+pub fn new_page(
+    config: &Config,
+    space: &Space,
+    title: String,
+    page_path: Option<&Path>,
+) -> Result<Page> {
     let mut new_page = Page::new(title, space.id.clone());
-    upload_page(&config.api, &mut new_page, None)?;
-    Ok(())
+    upload_page(&config.api, &mut new_page, page_path)
 }
 
-pub fn upload_edited_page(
-    config: &Config,
-    page: &mut Page,
-    file_path: Option<&PathBuf>,
-) -> Result<()> {
-    upload_page(&config.api, page, file_path)?;
-    Ok(())
+pub fn upload_page(api: &Api, page: &mut Page, file_path: Option<&Path>) -> Result<Page> {
+    if let Some(file_path) = file_path {
+        let mut file = File::open(file_path)?;
+        let mut unescaped_body = String::new();
+        file.read_to_string(&mut unescaped_body)?;
+        // Replace the existing page body with the converted body
+        page.set_body(convert_md_to_html(&unescaped_body)?);
+    };
+    // "Hack" to check if we are updating a page or making a new one. Should be an explict enum
+    // but...
+    match page.id {
+        Some(_) => page.update_page_by_id(api),
+        None => page.create_page(api),
+    }
 }
 
 pub fn delete_page(api: &Api, page: &mut Page) -> Result<()> {
     page.delete_page(api)
 }
 
-// Get a truncated view of the
+// Get a truncated view of the page for the TUI
 pub fn get_page_preview(page: &Page, preview_length: usize) -> Result<String> {
     let body = page.get_body();
     // Get the first n chars from the string and convert to md
     convert_html_to_md(&body.chars().take(preview_length).collect::<String>())
 }
 
+// Get a preview of the page for cli --last -p
 pub fn get_last_page_preview(config: &Config, preview_length: usize) -> Result<String> {
     let page = get_last_page(config)?;
     get_page_preview(&page, preview_length)
 }
 
+// Get a preview of the page for cli -i -p
 pub fn get_page_preview_by_id(config: &Config, id: &str, preview_length: usize) -> Result<String> {
     let page = get_page_by_id(&config.api, id)?;
     get_page_preview(&page, preview_length)
@@ -232,22 +241,6 @@ fn open_editor(path: &PathBuf, editor: Option<&Editor>) -> Result<()> {
     }
 }
 
-fn upload_page(api: &Api, page: &mut Page, file_path: Option<&PathBuf>) -> Result<Page> {
-    if let Some(file_path) = file_path {
-        let mut file = File::open(file_path)?;
-        let mut unescaped_body = String::new();
-        file.read_to_string(&mut unescaped_body)?;
-        // Replace the existing page body with the converted body
-        page.set_body(convert_md_to_html(&unescaped_body)?);
-    };
-    // "Hack" to check if we are updating a page or making a new one. Should be an explict enum
-    // but...
-    match page.id {
-        Some(_) => page.update_page_by_id(api),
-        None => page.create_page(api),
-    }
-}
-
 fn get_history_path_or_default(config: &Config) -> Result<PathBuf> {
     // If the user hasn't entered a history location in the config, default to the same location as
     // the saves
@@ -273,9 +266,9 @@ fn get_history_id(history_path: &Path) -> Result<String> {
     Ok(history_id)
 }
 
-fn select_space(api: &Api) -> Result<String> {
+fn select_space(api: &Api) -> Result<Space> {
     let space_list = get_space_list(api)?;
-    Ok(user_choose_space(space_list).id)
+    Ok(user_choose_space(space_list))
 }
 
 fn get_space_list(api: &Api) -> Result<Vec<Space>> {
@@ -295,17 +288,15 @@ fn user_choose_space(mut space_list: Vec<Space>) -> Space {
     }
     print!("Enter the number of the space to upload to: ");
     let max_selection = space_list.len() + 1;
-    let selection;
-    loop {
+    let selection = loop {
         let user_input: String = text_io::read!("{}\n");
-        selection = match user_input.parse::<usize>() {
-            Ok(selection) if 0 < selection && selection <= max_selection => selection,
+        match user_input.parse::<usize>() {
+            Ok(selection) if 0 < selection && selection <= max_selection => break selection,
             _ => {
                 println!("Enter a number corresponding to one of the above options!");
                 continue;
             }
-        };
-        break;
-    }
+        }
+    };
     space_list.remove(selection - 1)
 }

@@ -178,75 +178,6 @@ fn main() {
                     eprintln!("ERROR: {}", e)
                 }
             }
-
-            // if last && let Some(preview) = preview {
-            //     match actions::get_last_page(&config) {
-            //         Ok(page) => {
-            //             println!(
-            //                 "{}",
-            //                 actions::get_page_preview(&page, preview as usize).unwrap()
-            //             );
-            //         }
-            //         Err(e) => eprintln!("ERROR: {}", e),
-            //     }
-            // } else if last && let None = preview {
-            //     match actions::edit_last_page(&config) {
-            //         Ok(_) => println!("Page edited successfully!"),
-            //         Err(e) if e.to_string() == "USER_CANCEL" => {
-            //             println!("Exited without syncing changes")
-            //         }
-            //         Err(e) => eprintln!("ERROR: {}", e),
-            //     }
-            // } else if !last && let Some(preview) = preview {
-            //     match actions::get_page_by_id(&config.api, &id) {
-            //         Ok(page) => {
-            //             println!(
-            //                 "{}",
-            //                 actions::get_page_preview(&page, preview as usize).unwrap()
-            //             );
-            //         }
-            //         Err(e) => eprintln!("ERROR: {}", e),
-            //     }
-            // } else if !last && let None = preview {
-            //     match actions::edit_id(&config, &id) {
-            //         Ok(_) => println!("Page edited successfully"),
-            //         Err(e) if e.to_string() == "USER_CANCEL" => {
-            //             println!("Exited without syncing changes")
-            //         }
-            //         Err(e) => eprintln!("ERROR: {}", e),
-            //     }
-            // } else {
-            //     panic!(
-            //         "Argument parsing resulted in invalid state. Args: id {}, last {}, preview {:?}",
-            //         id, last, preview
-            //     );
-            // };
-
-            // let result = if last {
-            //     actions::edit_last_page(&config)
-            // } else {
-            //     // ID will always be present here, but check is required
-            //     if let Some(id) = &id
-            //         && !preview
-            //     {
-            //         actions::edit_id(&config, id)
-            //     } else if let Some(id) = id
-            //         && preview
-            //     {
-            //         let page = actions::get_page_by_id(&config.api, &id).unwrap();
-            //         println!("{}", actions::get_page_preview(&page, 2000).unwrap());
-            //         Ok(())
-            //     } else {
-            //         panic!("ID cannot be missing if last is false!")
-            //     }
-            // };
-            // match result {
-            //     Ok(_) => println!("Page edited successfully!"),
-            //     Err(e) if e.to_string() == "USER_CANCEL" => {
-            //         println!("Exited without syncing changes")
-            //     }
-            //     Err(e) => println!("ERROR: {}", e),
-            // }
         }
         Action::View => match config.tui {
             Some(Tui::Cursive) => match actions::view_pages(&config) {
@@ -287,21 +218,19 @@ fn main() {
                 Err(e) => println!("ERROR: {}", e),
             };
         }
-        Action::New { title, edit } => {
-            match actions::create_new_page(&config, &edit, title.clone()) {
-                Ok(_) => println!("New page successfully created!"),
-                Err(e) if e.to_string() == "USER_CANCEL" => {
-                    println!("Exited without saving changes")
-                }
-                Err(e) if e.to_string().starts_with("A page with this title") => {
-                    println!(
-                        "ERROR: A page with title \"{}\" already exists in this space",
-                        title
-                    )
-                }
-                Err(e) => println!("ERROR: {}", e),
+        Action::New { title, edit } => match actions::cli_new_page(&config, &edit, title.clone()) {
+            Ok(_) => println!("New page successfully created!"),
+            Err(e) if e.to_string() == "USER_CANCEL" => {
+                println!("Exited without saving changes")
             }
-        }
+            Err(e) if e.to_string().starts_with("A page with this title") => {
+                println!(
+                    "ERROR: A page with title \"{}\" already exists in this space",
+                    title
+                )
+            }
+            Err(e) => println!("ERROR: {}", e),
+        },
     }
 }
 
@@ -309,7 +238,7 @@ fn main() {
 // ~/.config/concmd directory.
 #[cfg(target_family = "unix")]
 fn get_config() -> Result<Config> {
-    let mut home_dir = dirs::home_dir().expect("home dir should always exist");
+    let mut home_dir = dirs::home_dir().ok_or(anyhow::anyhow!("Home dir could not be found"))?;
     home_dir.push(".config/concmd/config.toml");
 
     Config::read_config(&home_dir)

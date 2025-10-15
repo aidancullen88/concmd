@@ -17,8 +17,6 @@ pandoc = "0.8.11"
 cursive = "0.21"
 ratatui = "0.29.0"
 crossterm = "0.29.0"
-simple-logging = "2.0.2"
-log = "*"
 edit = "0.1.5"
 dirs = "6.0.0"
 
