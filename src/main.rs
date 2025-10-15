@@ -15,7 +15,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use clap::Parser;
+use clap::{ArgGroup, Parser};
 
 // Command line interface for clap
 #[derive(Parser, Debug)]
@@ -28,9 +28,12 @@ struct Args {
 #[derive(Debug, clap::Subcommand)]
 enum Action {
     // Require either the id or the --last arg
+    #[clap(group(ArgGroup::new("edit_mode").required(true).args(&["id", "last"])))]
     Edit {
-        #[command(subcommand)]
-        target: EditOptions,
+        #[arg(long)]
+        last: bool,
+        #[arg(short, long)]
+        id: Option<String>,
         #[arg(short, long)]
         preview: Option<u16>,
     },
@@ -49,12 +52,6 @@ enum Action {
         #[arg(long, short)]
         edit: bool,
     },
-}
-
-#[derive(Debug, clap::Subcommand)]
-enum EditOptions {
-    Last,
-    Id { id: String },
 }
 
 // Config structure. Note deserialize_with for save_location, see fn
@@ -153,24 +150,25 @@ fn main() {
     let cli = Args::parse();
 
     match cli.action {
-        Action::Edit { target, preview } => {
+        Action::Edit { id, last, preview } => {
             // FIXME: this logic sucks, refactor pls. Also says "page uploaded" when it wasn't
             // also maybe allow the user to give the preview length as an optional param
 
             let result =
-                match (target, preview) {
-                    (EditOptions::Last, Some(preview)) => {
+                match (last, id, preview) {
+                    (true, None, Some(preview)) => {
                         actions::get_last_page_preview(&config, preview as usize)
                             .map(|s| println!("{}", s))
                     }
-                    (EditOptions::Last, None) => actions::edit_last_page(&config)
+                    (true, None, None) => actions::edit_last_page(&config)
                         .map(|_| println!("Page edited successfully!")),
-                    (EditOptions::Id { id }, Some(preview)) => {
+                    (false, Some(id), Some(preview)) => {
                         actions::get_page_preview_by_id(&config, &id, preview as usize)
                             .map(|s| println!("{}", s))
                     }
-                    (EditOptions::Id { id }, None) => actions::edit_id(&config, &id)
+                    (false, Some(id), None) => actions::edit_id(&config, &id)
                         .map(|_| println!("Page edited successfully!")),
+                    _ => panic!("Unsupported CLI arguments set"),
                 };
 
             if let Err(e) = result {
