@@ -15,7 +15,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use clap::{ArgGroup, Parser};
+use clap::Parser;
 
 // Command line interface for clap
 #[derive(Parser, Debug)]
@@ -28,16 +28,9 @@ struct Args {
 #[derive(Debug, clap::Subcommand)]
 enum Action {
     // Require either the id or the --last arg
-    #[clap(group(
-        ArgGroup::new("edit_mode")
-        .required(true)
-        .args(&["id", "last"]),
-    ))]
     Edit {
-        #[arg(long)]
-        last: bool,
-        #[arg(short, long)]
-        id: String,
+        #[command(subcommand)]
+        target: EditOptions,
         #[arg(short, long)]
         preview: Option<u16>,
     },
@@ -56,6 +49,12 @@ enum Action {
         #[arg(long, short)]
         edit: bool,
     },
+}
+
+#[derive(Debug, clap::Subcommand)]
+enum EditOptions {
+    Last,
+    Id { id: String },
 }
 
 // Config structure. Note deserialize_with for save_location, see fn
@@ -154,52 +153,76 @@ fn main() {
     let cli = Args::parse();
 
     match cli.action {
-        Action::Edit { id, last, preview } => {
+        Action::Edit { target, preview } => {
             // FIXME: this logic sucks, refactor pls. Also says "page uploaded" when it wasn't
             // also maybe allow the user to give the preview length as an optional param
 
-            if last && let Some(preview) = preview {
-                match actions::get_last_page(&config) {
-                    Ok(page) => {
-                        println!(
-                            "{}",
-                            actions::get_page_preview(&page, preview as usize).unwrap()
-                        );
+            let result =
+                match (target, preview) {
+                    (EditOptions::Last, Some(preview)) => {
+                        actions::get_last_page_preview(&config, preview as usize)
+                            .map(|s| println!("{}", s))
                     }
-                    Err(e) => eprintln!("ERROR: {}", e),
-                }
-            } else if last && let None = preview {
-                match actions::edit_last_page(&config) {
-                    Ok(_) => println!("Page edited successfully!"),
-                    Err(e) if e.to_string() == "USER_CANCEL" => {
-                        println!("Exited without syncing changes")
+                    (EditOptions::Last, None) => actions::edit_last_page(&config)
+                        .map(|_| println!("Page edited successfully!")),
+                    (EditOptions::Id { id }, Some(preview)) => {
+                        actions::get_page_preview_by_id(&config, &id, preview as usize)
+                            .map(|s| println!("{}", s))
                     }
-                    Err(e) => eprintln!("ERROR: {}", e),
+                    (EditOptions::Id { id }, None) => actions::edit_id(&config, &id)
+                        .map(|_| println!("Page edited successfully!")),
+                };
+
+            if let Err(e) = result {
+                if e.to_string() == "USER_CANCEL" {
+                    println!("Exited without syncing changes")
+                } else {
+                    eprintln!("ERROR: {}", e)
                 }
-            } else if !last && let Some(preview) = preview {
-                match actions::get_page_by_id(&config.api, &id) {
-                    Ok(page) => {
-                        println!(
-                            "{}",
-                            actions::get_page_preview(&page, preview as usize).unwrap()
-                        );
-                    }
-                    Err(e) => eprintln!("ERROR: {}", e),
-                }
-            } else if !last && let None = preview {
-                match actions::edit_id(&config, &id) {
-                    Ok(_) => println!("Page edited successfully"),
-                    Err(e) if e.to_string() == "USER_CANCEL" => {
-                        println!("Exited without syncing changes")
-                    }
-                    Err(e) => eprintln!("ERROR: {}", e),
-                }
-            } else {
-                panic!(
-                    "Argument parsing resulted in invalid state. Args: id {}, last {}, preview {:?}",
-                    id, last, preview
-                );
-            };
+            }
+
+            // if last && let Some(preview) = preview {
+            //     match actions::get_last_page(&config) {
+            //         Ok(page) => {
+            //             println!(
+            //                 "{}",
+            //                 actions::get_page_preview(&page, preview as usize).unwrap()
+            //             );
+            //         }
+            //         Err(e) => eprintln!("ERROR: {}", e),
+            //     }
+            // } else if last && let None = preview {
+            //     match actions::edit_last_page(&config) {
+            //         Ok(_) => println!("Page edited successfully!"),
+            //         Err(e) if e.to_string() == "USER_CANCEL" => {
+            //             println!("Exited without syncing changes")
+            //         }
+            //         Err(e) => eprintln!("ERROR: {}", e),
+            //     }
+            // } else if !last && let Some(preview) = preview {
+            //     match actions::get_page_by_id(&config.api, &id) {
+            //         Ok(page) => {
+            //             println!(
+            //                 "{}",
+            //                 actions::get_page_preview(&page, preview as usize).unwrap()
+            //             );
+            //         }
+            //         Err(e) => eprintln!("ERROR: {}", e),
+            //     }
+            // } else if !last && let None = preview {
+            //     match actions::edit_id(&config, &id) {
+            //         Ok(_) => println!("Page edited successfully"),
+            //         Err(e) if e.to_string() == "USER_CANCEL" => {
+            //             println!("Exited without syncing changes")
+            //         }
+            //         Err(e) => eprintln!("ERROR: {}", e),
+            //     }
+            // } else {
+            //     panic!(
+            //         "Argument parsing resulted in invalid state. Args: id {}, last {}, preview {:?}",
+            //         id, last, preview
+            //     );
+            // };
 
             // let result = if last {
             //     actions::edit_last_page(&config)

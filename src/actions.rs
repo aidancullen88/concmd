@@ -67,12 +67,6 @@ pub fn edit_last_page(config: &Config) -> Result<()> {
     edit_id(config, &history_id)
 }
 
-pub fn get_last_page(config: &Config) -> Result<Page> {
-    let history_path = get_history_path_or_default(config)?;
-    let history_id = get_history_id(&history_path)?;
-    get_page_by_id(&config.api, &history_id)
-}
-
 // Entry point for both TUI options
 pub fn view_pages(config: &Config) -> Result<()> {
     match &config.tui {
@@ -150,6 +144,16 @@ pub fn get_page_preview(page: &Page, preview_length: usize) -> Result<String> {
     let body = page.get_body();
     // Get the first n chars from the string and convert to md
     convert_html_to_md(&body.chars().take(preview_length).collect::<String>())
+}
+
+pub fn get_last_page_preview(config: &Config, preview_length: usize) -> Result<String> {
+    let page = get_last_page(config)?;
+    get_page_preview(&page, preview_length)
+}
+
+pub fn get_page_preview_by_id(config: &Config, id: &str, preview_length: usize) -> Result<String> {
+    let page = get_page_by_id(&config.api, id)?;
+    get_page_preview(&page, preview_length)
 }
 
 pub fn get_page_by_id(api: &Api, id: &str) -> Result<Page> {
@@ -256,6 +260,12 @@ fn get_history_path_or_default(config: &Config) -> Result<PathBuf> {
     } else {
         Ok(history_path)
     }
+}
+
+fn get_last_page(config: &Config) -> Result<Page> {
+    let history_path = get_history_path_or_default(config)?;
+    let history_id = get_history_id(&history_path)?;
+    get_page_by_id(&config.api, &history_id)
 }
 
 fn get_history_id(history_path: &Path) -> Result<String> {
