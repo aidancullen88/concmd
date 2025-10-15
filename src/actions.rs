@@ -22,7 +22,7 @@ pub fn load_page_list_for_space(config: &Config, space_id: &str) -> Result<Vec<P
     Page::get_pages(&config.api, space_id)
 }
 
-pub fn edit_id(config: &Config, id: &String) -> Result<()> {
+pub fn edit_id(config: &Config, id: &str) -> Result<()> {
     // full workflow for page edit: pulls page, opens nvim, pushes page
     let mut page = Page::get_page_by_id(&config.api, id)?;
     let file_path = edit_page(config, &mut page)?;
@@ -81,31 +81,16 @@ pub fn view_pages(config: &Config) -> Result<()> {
     }
 }
 
-pub fn upload_existing_page(
+pub fn cli_new_page(
     config: &Config,
     should_edit: &bool,
-    page_path: &PathBuf,
     title: String,
+    page_path: Option<&Path>,
 ) -> Result<()> {
-    let user_space = select_space(&config.api)?;
-    println!("Page Uploading...");
-    let mut uploaded_page = new_page(config, &user_space, title, Some(page_path))?;
-    if *should_edit {
-        save_and_edit_page(config, &mut uploaded_page)?;
-    };
-    update_edited_history(
-        config,
-        &uploaded_page
-            .id
-            .expect("Uploaded page should always be assigned an ID"),
-    )
-}
-
-pub fn cli_new_page(config: &Config, should_edit: &bool, title: String) -> Result<()> {
     // Let the user select the space to upload to
     let user_space = select_space(&config.api)?;
     println!("Page Uploading...");
-    let mut uploaded_page = new_page(config, &user_space, title, None)?;
+    let mut uploaded_page = new_page(config, &user_space, title, page_path)?;
     if *should_edit {
         save_and_edit_page(config, &mut uploaded_page)?;
     };
@@ -193,7 +178,7 @@ fn save_page_to_file(location: &Path, id: &str, body: &str) -> Result<PathBuf> {
     Ok(file_path)
 }
 
-fn update_edited_history(config: &Config, id: &String) -> Result<()> {
+fn update_edited_history(config: &Config, id: &str) -> Result<()> {
     let history_path = get_history_path_or_default(config)?;
     std::fs::write(history_path, id)?;
     Ok(())

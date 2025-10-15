@@ -89,7 +89,7 @@ impl Page {
     // Confluence expects slightly different structure for upload than what it gives
     // for download. This is abstracted away here to make constructing the upload json
     // a bit easier.
-    pub fn get_body(&self) -> &String {
+    pub fn get_body(&self) -> &str {
         match &self.body {
             Body::Upload(storage) => &storage.value,
             Body::Download(page_body) => &page_body.editor.value,

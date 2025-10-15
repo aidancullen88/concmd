@@ -38,15 +38,9 @@ enum Action {
         preview: Option<u16>,
     },
     View,
-    Upload {
-        #[arg(long, short)]
-        path: String,
-        #[arg(long, short)]
-        title: String,
-        #[arg(long, short)]
-        edit: bool,
-    },
     New {
+        #[arg(long, short)]
+        path: Option<String>,
         #[arg(long, short)]
         title: String,
         #[arg(long, short)]
@@ -198,39 +192,43 @@ fn main() {
                 Err(e) => println!("ERROR: {}", e),
             },
         },
-        Action::Upload { path, title, edit } => {
-            #[cfg(target_family = "unix")]
-            let expanded_path = match expanduser::expanduser(path) {
-                Ok(ex_path) => ex_path,
-                Err(_) => {
-                    println!("The provided path is not valid");
-                    return;
-                }
-            };
-            #[cfg(target_family = "windows")]
-            let expanded_path = PathBuf::from(path);
+        Action::New { path, title, edit } => {
+            let result = if let Some(path) = path {
+                #[cfg(target_family = "unix")]
+                let expanded_path = match expanduser::expanduser(path) {
+                    Ok(ex_path) => ex_path,
+                    Err(_) => {
+                        println!("The provided path is not valid");
+                        return;
+                    }
+                };
+                #[cfg(target_family = "windows")]
+                let expanded_path = PathBuf::from(path);
 
-            match actions::upload_existing_page(&config, &edit, &expanded_path, title) {
-                Ok(_) => println!("New page successfully created!"),
-                Err(e) if e.to_string() == "USER_CANCEL" => {
-                    println!("Exited without saving changes")
-                }
-                Err(e) => println!("ERROR: {}", e),
-            };
-        }
-        Action::New { title, edit } => match actions::cli_new_page(&config, &edit, title.clone()) {
-            Ok(_) => println!("New page successfully created!"),
-            Err(e) if e.to_string() == "USER_CANCEL" => {
-                println!("Exited without saving changes")
-            }
-            Err(e) if e.to_string().starts_with("A page with this title") => {
-                println!(
-                    "ERROR: A page with title \"{}\" already exists in this space",
-                    title
+                actions::cli_new_page(&config, &edit, title.clone(), Some(&expanded_path))
+                    .map(|_| println!("New page created"))
+            } else {
+                actions::cli_new_page(
+                    &config,
+                    &edit,
+                    title.clone(),
+                    path.map(PathBuf::from).as_deref(),
                 )
+            };
+
+            if let Err(e) = result {
+                if e.to_string() == "USER_CANCEL" {
+                    println!("Exited without saving changes");
+                } else if e.to_string().starts_with("A page with this title") {
+                    eprintln!(
+                        "ERROR: A page with title \"{}\" already exists in this space",
+                        title
+                    )
+                } else {
+                    eprintln!("ERROR: {}", e)
+                }
             }
-            Err(e) => println!("ERROR: {}", e),
-        },
+        }
     }
 }
 
