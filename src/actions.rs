@@ -5,21 +5,23 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use cursive::Cursive;
-
 use crate::Editor;
 use crate::conf_api::{Page, Space};
-use crate::{Api, alt_tui};
-use crate::{Config, Tui};
+use crate::{Api, Config};
 
 // Interface
 
-pub fn load_space_list(config: &Config) -> Result<Vec<Space>> {
-    Space::get_spaces(&config.api)
+pub fn load_space_list(api: &Api) -> Result<Vec<Space>> {
+    Space::get_spaces(&api)
 }
 
-pub fn load_page_list_for_space(config: &Config, space_id: &str) -> Result<Vec<Page>> {
-    Page::get_pages(&config.api, space_id)
+pub fn load_page_list_for_space(api: &Api, space_id: &str) -> Result<Vec<Page>> {
+    Page::get_pages(api, space_id)
+}
+
+pub fn load_page_list_select_space(api: &Api) -> Result<Vec<Page>> {
+    let selected_space = select_space(api)?;
+    load_page_list_for_space(api, &selected_space.id)
 }
 
 pub fn edit_id(config: &Config, id: &str) -> Result<()> {
@@ -64,21 +66,6 @@ pub fn edit_last_page(config: &Config) -> Result<()> {
     let history_path = get_history_path_or_default(config)?;
     let history_id = get_history_id(&history_path)?;
     edit_id(config, &history_id)
-}
-
-// Entry point for both TUI options
-pub fn view_pages(config: &Config) -> Result<()> {
-    match &config.tui {
-        // Callback heavy nature of cursive requires a lot more setup
-        Some(Tui::Cursive) => {
-            let mut siv = Cursive::default();
-            siv.set_user_data(config.clone());
-            let id = crate::tui::display(&mut siv)?;
-            edit_id(config, &id)
-        }
-        // Default to ratatui if option not set
-        Some(Tui::Ratatui) | None => alt_tui::display(config),
-    }
 }
 
 pub fn cli_new_page(
@@ -127,7 +114,12 @@ pub fn upload_page(api: &Api, page: &mut Page, file_path: Option<&Path>) -> Resu
     }
 }
 
-pub fn delete_page(api: &Api, page: &mut Page) -> Result<()> {
+pub fn delete_page_by_id(api: &Api, id: &str) -> Result<()> {
+    let page = get_page_by_id(api, id)?;
+    delete_page(api, &page)
+}
+
+pub fn delete_page(api: &Api, page: &Page) -> Result<()> {
     page.delete_page(api)
 }
 
@@ -197,7 +189,7 @@ fn convert_html_to_md(body: &str) -> Result<String> {
     let mut pandoc = pandoc::new();
     pandoc.set_input_format(pandoc::InputFormat::Html, vec![]);
     pandoc.set_input(pandoc::InputKind::Pipe(body.to_string()));
-    pandoc.set_output_format(pandoc::OutputFormat::Markdown, vec![]);
+    pandoc.set_output_format(pandoc::OutputFormat::MarkdownGithub, vec![]);
     pandoc.set_output(pandoc::OutputKind::Pipe);
     pandoc.add_option(pandoc::PandocOption::NoWrap);
     let output = pandoc.execute()?;
@@ -260,12 +252,8 @@ fn get_history_id(history_path: &Path) -> Result<String> {
 }
 
 fn select_space(api: &Api) -> Result<Space> {
-    let space_list = get_space_list(api)?;
+    let space_list = load_space_list(api)?;
     Ok(user_choose_space(space_list))
-}
-
-fn get_space_list(api: &Api) -> Result<Vec<Space>> {
-    Space::get_spaces(api)
 }
 
 fn user_choose_space(mut space_list: Vec<Space>) -> Space {
@@ -279,7 +267,7 @@ fn user_choose_space(mut space_list: Vec<Space>) -> Space {
             &space.key
         );
     }
-    print!("Enter the number of the space to upload to: ");
+    print!("Enter the number of the space to select: ");
     let max_selection = space_list.len() + 1;
     let selection = loop {
         let user_input: String = text_io::read!("{}\n");

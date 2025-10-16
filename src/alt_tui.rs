@@ -5,7 +5,7 @@ use std::io::stdout;
 use std::iter::zip;
 use std::path::PathBuf;
 
-use crate::conf_api::{Named, Page, Space};
+use crate::conf_api::{Attr, Page, Space};
 use crate::{Config, actions};
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
@@ -131,7 +131,7 @@ impl App {
     }
 
     fn load_pages(&mut self, config: &Config, space_id: &str) -> Result<()> {
-        self.page_list = actions::load_page_list_for_space(config, space_id)?;
+        self.page_list = actions::load_page_list_for_space(&config.api, space_id)?;
         self.sort_pages(SortType::CreatedOn, SortDirection::Asc);
         Ok(())
     }
@@ -231,7 +231,7 @@ impl App {
                     .id,
             ),
             CurrentArea::Spaces => {
-                self.space_list = actions::load_space_list(config)?;
+                self.space_list = actions::load_space_list(&config.api)?;
                 Ok(())
             }
             s => panic!("Refresh should not be called from {:?}", s),
@@ -379,7 +379,7 @@ enum CurrentArea {
 // Entry point for the TUI
 pub fn display(config: &Config) -> Result<()> {
     let mut terminal = ratatui::init();
-    let spaces = actions::load_space_list(config)?;
+    let spaces = actions::load_space_list(&config.api)?;
     let mut app = App::new(spaces);
     // Store the result here so we can reset the terminal even if it's an error
     let result = run(config, &mut terminal, &mut app);
@@ -929,7 +929,7 @@ fn run_editor(terminal: &mut DefaultTerminal, config: &Config, page: &mut Page) 
 }
 
 // Anything that implements Named can be turned into a list of names for the ui
-fn get_name_list<N: Named>(item_list: &[N]) -> Vec<String> {
+fn get_name_list<A: Attr>(item_list: &[A]) -> Vec<String> {
     item_list.iter().map(|i| i.get_name()).collect()
 }
 

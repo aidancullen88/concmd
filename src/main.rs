@@ -1,7 +1,6 @@
 mod actions;
 mod alt_tui;
 mod conf_api;
-mod tui;
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
@@ -17,6 +16,8 @@ use std::{
 
 use clap::{ArgGroup, Parser};
 
+use crate::conf_api::Attr;
+
 // Command line interface for clap
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -30,21 +31,39 @@ enum Action {
     // Require either the id or the --last arg
     #[clap(group(ArgGroup::new("edit_mode").required(true).args(&["id", "last"])))]
     Edit {
+        /// Re-open the last page to be edited
         #[arg(long)]
         last: bool,
+        /// ID of the page to edit: cannot be used with --last
         #[arg(short, long)]
         id: Option<String>,
+        /// Print n bytes of the content as a preview of the page rather than editing
         #[arg(short, long)]
         preview: Option<u16>,
     },
     View,
     New {
+        /// Use an existing file to create the new page
         #[arg(long, short)]
         path: Option<String>,
+        /// The title of the new page
         #[arg(long, short)]
         title: String,
+        /// Open the page for editing after it has been created
         #[arg(long, short)]
         edit: bool,
+    },
+    Delete {
+        /// ID of the page to delete
+        #[arg(long, short)]
+        id: String,
+    },
+    #[clap(group(ArgGroup::new("list_mode").required(true).args(&["pages", "spaces"])))]
+    List {
+        #[arg(long)]
+        pages: bool,
+        #[arg(long)]
+        spaces: bool,
     },
 }
 
@@ -61,7 +80,6 @@ struct Config {
     auto_sync: Option<bool>,
     api: Api,
     editor: Option<Editor>,
-    tui: Option<Tui>,
 }
 
 #[cfg(target_family = "windows")]
@@ -72,7 +90,6 @@ struct Config {
     auto_sync: Option<bool>,
     api: Api,
     editor: Option<Editor>,
-    tui: Option<Tui>,
 }
 
 impl Config {
@@ -84,13 +101,6 @@ impl Config {
         toml::from_str::<Config>(contents.as_str())
             .context("The config file could not be parsed: check the formatting")
     }
-}
-
-#[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "lowercase")]
-enum Tui {
-    Ratatui,
-    Cursive,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -169,28 +179,16 @@ fn main() {
                 if e.to_string() == "USER_CANCEL" {
                     println!("Exited without syncing changes")
                 } else {
-                    eprintln!("ERROR: {}", e)
+                    print_generic_error(e)
                 }
             }
         }
-        Action::View => match config.tui {
-            Some(Tui::Cursive) => match actions::view_pages(&config) {
-                Ok(_) => println!("Page edited successfully!"),
-                Err(e) if e.to_string() == "USER_CANCEL" => {
-                    println!("Exited without saving changes")
-                }
-                Err(e) if e.to_string() == "USER_APP_EXIT" => {
-                    println!("Exited without selecting a page")
-                }
-                Err(e) => println!("ERROR: {}", e),
-            },
-            Some(Tui::Ratatui) | None => match actions::view_pages(&config) {
-                Ok(_) => {}
-                Err(e) if e.to_string() == "USER_APP_EXIT" => {
-                    println!("Exited without selecting a page")
-                }
-                Err(e) => println!("ERROR: {}", e),
-            },
+        Action::View => match alt_tui::display(&config) {
+            Ok(_) => {}
+            Err(e) if e.to_string() == "USER_APP_EXIT" => {
+                println!("Exited without selecting a page")
+            }
+            Err(e) => print_generic_error(e),
         },
         Action::New { path, title, edit } => {
             let result = if let Some(path) = path {
@@ -206,7 +204,7 @@ fn main() {
                 let expanded_path = PathBuf::from(path);
 
                 actions::cli_new_page(&config, &edit, title.clone(), Some(&expanded_path))
-                    .map(|_| println!("New page created"))
+                    .map(|_| println!("Page created successfully!"))
             } else {
                 actions::cli_new_page(
                     &config,
@@ -214,6 +212,7 @@ fn main() {
                     title.clone(),
                     path.map(PathBuf::from).as_deref(),
                 )
+                .map(|_| println!("Page created successfully!"))
             };
 
             if let Err(e) = result {
@@ -225,10 +224,31 @@ fn main() {
                         title
                     )
                 } else {
-                    eprintln!("ERROR: {}", e)
+                    print_generic_error(e);
                 }
             }
         }
+        Action::Delete { id } => match actions::delete_page_by_id(&config.api, &id) {
+            Ok(()) => println!("Page deleted successfullly"),
+            Err(e) if e.to_string() == "DELETE_UNAUTH" => {
+                eprintln!("Token is not authorised to delete this page")
+            }
+            Err(e) if e.to_string() == "NOT_FOUND" => {
+                eprintln!("Page with id {} was not found for deletion", id)
+            }
+            Err(e) => print_generic_error(e),
+        },
+        Action::List { pages, spaces } => match (pages, spaces) {
+            (false, true) => match actions::load_space_list(&config.api) {
+                Ok(space_list) => render_name_id_list(&space_list),
+                Err(e) => print_generic_error(e),
+            },
+            (true, false) => match actions::load_page_list_select_space(&config.api) {
+                Ok(page_list) => render_name_id_list(&page_list),
+                Err(e) => print_generic_error(e),
+            },
+            _ => panic!("Invalid option combination from CLI"),
+        },
     }
 }
 
@@ -251,4 +271,14 @@ fn get_config() -> Result<Config> {
     println!("{:?}", home_dir);
 
     Config::read_config(&home_dir)
+}
+
+fn render_name_id_list<A: Attr>(items: &[A]) {
+    for i in items.iter() {
+        println!("ID: {}, Title: {}", i.get_id(), i.get_name())
+    }
+}
+
+fn print_generic_error(e: anyhow::Error) {
+    eprintln!("ERROR: {}", e)
 }

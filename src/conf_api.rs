@@ -6,8 +6,9 @@ use std::fmt;
 use crate::Api;
 
 // Used for generic functions over pages and spaces for the UI rendering
-pub trait Named {
+pub trait Attr {
     fn get_name(&self) -> String;
+    fn get_id(&self) -> String;
 }
 
 #[derive(Deserialize)]
@@ -60,9 +61,14 @@ pub struct PageVersion {
     // pub created_at: String,
 }
 
-impl Named for Page {
+impl Attr for Page {
     fn get_name(&self) -> String {
         self.title.clone()
+    }
+    fn get_id(&self) -> String {
+        self.id
+            .clone()
+            .expect("page rendered should always have id")
     }
 }
 
@@ -214,7 +220,7 @@ impl Page {
         match resp.status().as_u16() {
             204 => Ok(()),
             401 => bail!("DELETE_UNAUTH"),
-            400 => bail!("Page was not found on confluence"),
+            404 => bail!("NOT_FOUND"),
             _ => bail!("Bad request: {}", resp.text()?),
         }
     }
@@ -254,9 +260,12 @@ pub struct Space {
     pub name: String,
 }
 
-impl Named for Space {
+impl Attr for Space {
     fn get_name(&self) -> String {
         self.name.clone()
+    }
+    fn get_id(&self) -> String {
+        self.id.clone()
     }
 }
 
