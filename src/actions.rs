@@ -171,9 +171,18 @@ fn save_and_edit_page(config: &Config, page: &mut Page) -> Result<PathBuf> {
 fn save_page_to_file(location: &Path, id: &str, body: &str) -> Result<PathBuf> {
     let converted_body = convert_html_to_md(body)?;
     let mut file_path = location.to_path_buf();
+    let dir_path = file_path.clone();
     file_path.push(id);
     file_path.set_extension("md");
-    let mut file = File::create(&file_path)?;
+    let mut file = match File::create(&file_path) {
+        Ok(file) => file,
+        // If the directory doesn't exist, try to create it
+        Err(e) if matches!(e.kind(), std::io::ErrorKind::NotFound) => {
+            std::fs::create_dir(dir_path)?;
+            File::create(&file_path)?
+        }
+        Err(e) => bail!("File creation failed with error {}", e.to_string()),
+    };
     file.write_all(converted_body.as_bytes())?;
     Ok(file_path)
 }
@@ -229,15 +238,14 @@ fn open_editor(path: &PathBuf, editor: Option<&Editor>) -> Result<()> {
 fn get_history_path_or_default(config: &Config) -> Result<PathBuf> {
     // If the user hasn't entered a history location in the config, default to the same location as
     // the saves
-    let history_path = match &config.history_location {
-        Some(path) => Path::new(path).join("history.txt"),
-        None => config.save_location.clone().join("history.txt"),
+    let history_dir_path = match &config.history_location {
+        Some(path) => path,
+        None => &config.save_location,
     };
-    if std::fs::metadata(&history_path).is_err() {
-        bail!("Directory for history file does not exist");
-    } else {
-        Ok(history_path)
-    }
+    if !std::fs::exists(history_dir_path)? {
+        std::fs::create_dir(history_dir_path)?
+    };
+    Ok(history_dir_path.join("history.txt"))
 }
 
 fn get_last_page(config: &Config) -> Result<Page> {
