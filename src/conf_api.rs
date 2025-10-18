@@ -134,7 +134,7 @@ impl Page {
             api,
             RequestType::Get,
             format!(
-                "https://{}/wiki/api/v2/pages/{}?body-format=editor",
+                "https://{}/wiki/api/v2/pages/{}?body-format=storage",
                 api.confluence_domain, id
             ),
         )?;

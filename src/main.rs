@@ -65,6 +65,13 @@ enum Action {
         #[arg(long)]
         spaces: bool,
     },
+    #[clap(group(ArgGroup::new("convert_mode").required(true).args(&["md", "html"])))]
+    Convert {
+        #[arg(long)]
+        md: bool,
+        #[arg(long)]
+        html: bool,
+    },
 }
 
 // Config structure. Note deserialize_with for save_location, see fn
@@ -248,6 +255,14 @@ fn main() {
                 Err(e) => print_generic_error(e),
             },
             _ => panic!("Invalid option combination from CLI"),
+        },
+        Action::Convert { md, html } => match (md, html) {
+            (true, false) => match actions::convert_md_string_html() {
+                Ok(result_string) => println!("{}", result_string),
+                Err(e) => print_generic_error(e),
+            },
+            (false, true) => todo!("Conversion the other way not impl yet"),
+            _ => panic!("Invalid option combination from clap"),
         },
     }
 }

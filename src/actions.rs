@@ -12,7 +12,7 @@ use crate::{Api, Config};
 // Interface
 
 pub fn load_space_list(api: &Api) -> Result<Vec<Space>> {
-    Space::get_spaces(&api)
+    Space::get_spaces(api)
 }
 
 pub fn load_page_list_for_space(api: &Api, space_id: &str) -> Result<Vec<Page>> {
@@ -104,7 +104,7 @@ pub fn upload_page(api: &Api, page: &mut Page, file_path: Option<&Path>) -> Resu
         let mut unescaped_body = String::new();
         file.read_to_string(&mut unescaped_body)?;
         // Replace the existing page body with the converted body
-        page.set_body(convert_md_to_html(&unescaped_body)?);
+        page.set_body(convert_md_to_html(&mut unescaped_body)?);
     };
     // "Hack" to check if we are updating a page or making a new one. Should be an explict enum
     // but...
@@ -144,6 +144,12 @@ pub fn get_page_preview_by_id(config: &Config, id: &str, preview_length: usize) 
 
 pub fn get_page_by_id(api: &Api, id: &str) -> Result<Page> {
     Page::get_page_by_id(api, id)
+}
+
+pub fn convert_md_string_html() -> Result<String> {
+    let mut body = String::new();
+    std::io::stdin().read_to_string(&mut body)?;
+    convert_md_to_html(&mut body)
 }
 
 // Worker functions
@@ -199,7 +205,8 @@ fn convert_html_to_md(body: &str) -> Result<String> {
     }
 }
 
-fn convert_md_to_html(body: &str) -> Result<String> {
+fn convert_md_to_html(body: &mut String) -> Result<String> {
+    let removed_content = test_remove_code_block(body);
     let mut pandoc = pandoc::new();
     pandoc.set_input_format(pandoc::InputFormat::MarkdownGithub, vec![]);
     pandoc.set_input(pandoc::InputKind::Pipe(body.to_string()));
@@ -207,9 +214,42 @@ fn convert_md_to_html(body: &str) -> Result<String> {
     pandoc.set_output(pandoc::OutputKind::Pipe);
     pandoc.add_option(pandoc::PandocOption::NoWrap);
     let output = pandoc.execute()?;
-    match output {
-        pandoc::PandocOutput::ToBuffer(pandoc_buff) => Ok(pandoc_buff),
+    let mut new_body = match output {
+        pandoc::PandocOutput::ToBuffer(pandoc_buff) => pandoc_buff,
         _ => bail!("Pandoc returned incorrect type"),
+    };
+    if let Some(content) = removed_content {
+        test_reinsert_content(&content, &mut new_body);
+    }
+    Ok(new_body)
+}
+
+fn test_remove_code_block(body: &mut String) -> Option<String> {
+    let start_block_position = body.find("```code/rust");
+    // take a slice from the string and find the next ```
+    if let Some(start_pos) = start_block_position {
+        println!("{}", start_pos);
+        let next_string = &body[(start_pos + 12)..];
+        println!("{}", next_string);
+        let end_block_position = next_string.find("```");
+        println!("{:?}", end_block_position);
+        let end_pos = end_block_position.map_or(body.len() - 1, |pos| pos + start_pos + 12);
+        println!("{}", end_pos);
+        let content = body[(start_pos + 13)..(end_pos - 1)].to_string();
+        body.replace_range(start_pos..(end_pos + 3), "cc:code:rust");
+        return Some(content);
+    }
+    None
+}
+
+fn test_reinsert_content(content: &str, body: &mut String) {
+    let block_position = body.find("cc:code:rust");
+    if let Some(block_start) = block_position {
+        let replacement_string = format!(
+            "<ac:structured-macro ac:name=\"code\" ac:schema-version=\"1\" ac:macro-id=\"d5f2ba10-6067-4a3e-bab1-af5f3bb9b321\"><ac:parameter ac:name=\"language\">rust</ac:parameter><ac:parameter ac:name=\"breakoutMode\">wide</ac:parameter><ac:parameter ac:name=\"breakoutWidth\">760</ac:parameter><ac:plain-text-body><![CDATA[{}]]></ac:plain-text-body></ac:structured-macro>",
+            content
+        );
+        body.replace_range((block_start - 3)..(block_start + 16), &replacement_string);
     }
 }
 

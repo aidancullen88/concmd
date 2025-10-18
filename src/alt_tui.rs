@@ -608,8 +608,8 @@ fn update(
 
         Message::DeletePage => app.current_area = CurrentArea::DeletePopup,
         Message::ConfirmDeletePage => {
-            if let Some(mut page) = app.get_selected_page() {
-                actions::delete_page(&config.api, &mut page)?;
+            if let Some(page) = app.get_selected_page() {
+                actions::delete_page(&config.api, &page)?;
             };
             app.current_area = CurrentArea::Pages;
             return Ok(Some(Message::Refresh));
