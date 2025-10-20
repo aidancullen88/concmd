@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, bail};
 use core::panic;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -27,7 +27,7 @@ pub fn load_page_list_select_space(api: &Api) -> Result<Vec<Page>> {
 pub fn edit_id(config: &Config, id: &str) -> Result<()> {
     // full workflow for page edit: pulls page, opens nvim, pushes page
     let mut page = Page::get_page_by_id(&config.api, id)?;
-    let file_path = edit_page(config, &mut page)?;
+    let file_path = edit_page(config, &page)?;
     match config.auto_sync {
         Some(true) => {
             println!("Page uploading...");
@@ -49,15 +49,14 @@ pub fn edit_id(config: &Config, id: &str) -> Result<()> {
 }
 
 // Shortened workflow for TUI that does not handle upload
-pub fn edit_page(config: &Config, page: &mut Page) -> Result<PathBuf> {
+pub fn edit_page(config: &Config, page: &Page) -> Result<PathBuf> {
     let file_path = save_and_edit_page(config, page)?;
     // Save the edited file for use with --edit last
     update_edited_history(
         config,
-        &page
-            .id
-            .clone()
-            .ok_or_else(|| anyhow!("Edited page did not have an ID"))?,
+        page.id
+            .as_ref()
+            .expect("Page to be edited should always have an ID"),
     )?;
     Ok(file_path)
 }
@@ -77,9 +76,9 @@ pub fn cli_new_page(
     // Let the user select the space to upload to
     let user_space = select_space(&config.api)?;
     println!("Page Uploading...");
-    let mut uploaded_page = new_page(config, &user_space, title, page_path)?;
+    let uploaded_page = new_page(config, &user_space, title, page_path)?;
     if *should_edit {
-        save_and_edit_page(config, &mut uploaded_page)?;
+        save_and_edit_page(config, &uploaded_page)?;
     };
     if let Some(id) = uploaded_page.id {
         update_edited_history(config, &id)
@@ -154,7 +153,7 @@ pub fn convert_md_string_html() -> Result<String> {
 
 // Worker functions
 
-fn save_and_edit_page(config: &Config, page: &mut Page) -> Result<PathBuf> {
+fn save_and_edit_page(config: &Config, page: &Page) -> Result<PathBuf> {
     let file_path = save_page_to_file(
         &config.save_location,
         page.id
