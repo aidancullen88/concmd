@@ -196,7 +196,7 @@ impl Page {
             api,
             RequestType::Get,
             format!(
-                "https://{}/wiki/api/v2/pages?space-id={}&body-format=storage",
+                "https://{}/wiki/api/v2/pages?space-id={}&body-format=storage&limit=250",
                 api.confluence_domain, space_id
             ),
         )?

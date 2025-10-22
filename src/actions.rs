@@ -27,12 +27,14 @@ pub fn load_page_list_select_space(api: &Api) -> Result<Vec<Page>> {
 pub fn edit_id(config: &Config, id: &str) -> Result<()> {
     // full workflow for page edit: pulls page, opens nvim, pushes page
     let mut page = Page::get_page_by_id(&config.api, id)?;
-    let file_path = edit_page(config, &page)?;
+    let file_path = edit_page(config, &mut page)?;
+
     match config.auto_sync {
         Some(true) => {
             println!("Page uploading...");
             upload_page(&config.api, &mut page, Some(&file_path))?;
         }
+        // Ask the user if they want to sync the page or not
         Some(false) | None => {
             print!("Publish page: y/n?: ");
             let user_input: String = text_io::read!("{}\n");
@@ -49,7 +51,7 @@ pub fn edit_id(config: &Config, id: &str) -> Result<()> {
 }
 
 // Shortened workflow for TUI that does not handle upload
-pub fn edit_page(config: &Config, page: &Page) -> Result<PathBuf> {
+pub fn edit_page(config: &Config, page: &mut Page) -> Result<PathBuf> {
     let file_path = save_and_edit_page(config, page)?;
     // Save the edited file for use with --edit last
     update_edited_history(
@@ -76,18 +78,21 @@ pub fn cli_new_page(
     // Let the user select the space to upload to
     let user_space = select_space(&config.api)?;
     println!("Page Uploading...");
-    let uploaded_page = new_page(config, &user_space, title, page_path)?;
+    let mut uploaded_page = upload_new_page(config, &user_space, title, page_path)?;
     if *should_edit {
-        save_and_edit_page(config, &uploaded_page)?;
+        save_and_edit_page(config, &mut uploaded_page)?;
     };
-    if let Some(id) = uploaded_page.id {
-        update_edited_history(config, &id)
-    } else {
-        bail!("New page was created without id")
-    }
+
+    update_edited_history(
+        config,
+        uploaded_page
+            .id
+            .as_ref()
+            .expect("Uploaded page should always have ID"),
+    )
 }
 
-pub fn new_page(
+pub fn upload_new_page(
     config: &Config,
     space: &Space,
     title: String,
@@ -153,7 +158,7 @@ pub fn convert_md_string_html() -> Result<String> {
 
 // Worker functions
 
-fn save_and_edit_page(config: &Config, page: &Page) -> Result<PathBuf> {
+fn save_and_edit_page(config: &Config, page: &mut Page) -> Result<PathBuf> {
     let file_path = save_page_to_file(
         &config.save_location,
         page.id
@@ -162,6 +167,7 @@ fn save_and_edit_page(config: &Config, page: &Page) -> Result<PathBuf> {
         page.get_body(),
     )?;
     open_editor(&file_path, config.editor.as_ref())?;
+    upload_page(&config.api, page, Some(&file_path))?;
     Ok(file_path)
 }
 
@@ -205,7 +211,7 @@ fn convert_html_to_md(body: &str) -> Result<String> {
 }
 
 fn convert_md_to_html(body: &mut String) -> Result<String> {
-    let removed_content = test_remove_code_block(body);
+    // let removed_content = test_remove_code_block(body);
     let mut pandoc = pandoc::new();
     pandoc.set_input_format(pandoc::InputFormat::MarkdownGithub, vec![]);
     pandoc.set_input(pandoc::InputKind::Pipe(body.to_string()));
@@ -213,44 +219,45 @@ fn convert_md_to_html(body: &mut String) -> Result<String> {
     pandoc.set_output(pandoc::OutputKind::Pipe);
     pandoc.add_option(pandoc::PandocOption::NoWrap);
     let output = pandoc.execute()?;
-    let mut new_body = match output {
+    // let mut new_body = match output {
+    let new_body = match output {
         pandoc::PandocOutput::ToBuffer(pandoc_buff) => pandoc_buff,
         _ => bail!("Pandoc returned incorrect type"),
     };
-    if let Some(content) = removed_content {
-        test_reinsert_content(&content, &mut new_body);
-    }
+    // if let Some(content) = removed_content {
+    //     test_reinsert_content(&content, &mut new_body);
+    // }
     Ok(new_body)
 }
 
-fn test_remove_code_block(body: &mut String) -> Option<String> {
-    let start_block_position = body.find("```code/rust");
-    // take a slice from the string and find the next ```
-    if let Some(start_pos) = start_block_position {
-        println!("{}", start_pos);
-        let next_string = &body[(start_pos + 12)..];
-        println!("{}", next_string);
-        let end_block_position = next_string.find("```");
-        println!("{:?}", end_block_position);
-        let end_pos = end_block_position.map_or(body.len() - 1, |pos| pos + start_pos + 12);
-        println!("{}", end_pos);
-        let content = body[(start_pos + 13)..(end_pos - 1)].to_string();
-        body.replace_range(start_pos..(end_pos + 3), "cc:code:rust");
-        return Some(content);
-    }
-    None
-}
-
-fn test_reinsert_content(content: &str, body: &mut String) {
-    let block_position = body.find("cc:code:rust");
-    if let Some(block_start) = block_position {
-        let replacement_string = format!(
-            "<ac:structured-macro ac:name=\"code\" ac:schema-version=\"1\" ac:macro-id=\"d5f2ba10-6067-4a3e-bab1-af5f3bb9b321\"><ac:parameter ac:name=\"language\">rust</ac:parameter><ac:parameter ac:name=\"breakoutMode\">wide</ac:parameter><ac:parameter ac:name=\"breakoutWidth\">760</ac:parameter><ac:plain-text-body><![CDATA[{}]]></ac:plain-text-body></ac:structured-macro>",
-            content
-        );
-        body.replace_range((block_start - 3)..(block_start + 16), &replacement_string);
-    }
-}
+// fn test_remove_code_block(body: &mut String) -> Option<String> {
+//     let start_block_position = body.find("```code/rust");
+//     // take a slice from the string and find the next ```
+//     if let Some(start_pos) = start_block_position {
+//         println!("{}", start_pos);
+//         let next_string = &body[(start_pos + 12)..];
+//         println!("{}", next_string);
+//         let end_block_position = next_string.find("```");
+//         println!("{:?}", end_block_position);
+//         let end_pos = end_block_position.map_or(body.len() - 1, |pos| pos + start_pos + 12);
+//         println!("{}", end_pos);
+//         let content = body[(start_pos + 13)..(end_pos - 1)].to_string();
+//         body.replace_range(start_pos..(end_pos + 3), "cc:code:rust");
+//         return Some(content);
+//     }
+//     None
+// }
+//
+// fn test_reinsert_content(content: &str, body: &mut String) {
+//     let block_position = body.find("cc:code:rust");
+//     if let Some(block_start) = block_position {
+//         let replacement_string = format!(
+//             "<ac:structured-macro ac:name=\"code\" ac:schema-version=\"1\" ac:macro-id=\"d5f2ba10-6067-4a3e-bab1-af5f3bb9b321\"><ac:parameter ac:name=\"language\">rust</ac:parameter><ac:parameter ac:name=\"breakoutMode\">wide</ac:parameter><ac:parameter ac:name=\"breakoutWidth\">760</ac:parameter><ac:plain-text-body><![CDATA[{}]]></ac:plain-text-body></ac:structured-macro>",
+//             content
+//         );
+//         body.replace_range((block_start - 3)..(block_start + 16), &replacement_string);
+//     }
+// }
 
 fn open_editor(path: &PathBuf, editor: Option<&Editor>) -> Result<()> {
     match editor {

@@ -321,6 +321,17 @@ impl App {
             SortDirection::Desc => self.sort.dir_state = SortDirection::Asc,
         }
     }
+
+    fn reset_search(&mut self) {
+        if self.search.search_active {
+            self.search.search_active = false;
+            self.search.current_search = String::new();
+        };
+    }
+
+    fn clear_page_saved_state(&mut self, page_id: &str) {
+        self.page_states_map.remove(page_id);
+    }
 }
 
 // Represents all possible user actions in the app
@@ -516,6 +527,11 @@ fn update(
         }
         Message::OpenEditor => {
             if let Some(mut page) = app.get_selected_page() {
+                app.clear_page_saved_state(
+                    page.id
+                        .as_ref()
+                        .expect("Page from API should always have an ID"),
+                );
                 let edited_file_path = run_editor(terminal, config, &mut page)?;
                 // Save the edited file path to use if the user wants to save
                 app.edited_file_path = Some(edited_file_path);
@@ -559,23 +575,24 @@ fn update(
                 }
             }
         }
-        Message::Back => match &app.current_area {
-            CurrentArea::Pages => {
-                // Clear out the pages list and reset the state
-                app.page_list = vec![];
-                app.page_list_state = ListState::default();
-                app.current_area = CurrentArea::Spaces;
-            }
-            CurrentArea::Spaces => {
-                app.space_list_state = ListState::default();
-            }
-            _ => {}
-        },
-        Message::Refresh => {
-            if app.search.search_active {
-                app.search.search_active = false;
-                app.search.current_search = String::new();
+        Message::Back => {
+            match &app.current_area {
+                CurrentArea::Pages => {
+                    // Clear out the pages list and reset the state
+                    app.page_list = vec![];
+                    app.page_list_state = ListState::default();
+                    app.current_area = CurrentArea::Spaces;
+                }
+                CurrentArea::Spaces => {
+                    app.space_list_state = ListState::default();
+                }
+                _ => {}
             };
+            // Reset search when the user leaves the current area
+            app.reset_search();
+        }
+        Message::Refresh => {
+            app.reset_search();
             app.refresh_current_list(config)?;
         }
         // New page updates
@@ -589,7 +606,7 @@ fn update(
             app.reset_cursor();
         }
         Message::SaveNewPage => {
-            actions::new_page(
+            actions::upload_new_page(
                 config,
                 &app.get_selected_space()
                     .expect("Should always be a space selected"),
@@ -879,7 +896,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
                 top: 2,
                 bottom: 1,
             });
-            let type_strings = app.sort.sort_types_array.map(|t| format!("{}", t));
+            let type_strings = app.sort.sort_types_array.map(|t| t.to_string());
             let type_list = List::new(type_strings)
                 .highlight_style(
                     Style::default()
