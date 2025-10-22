@@ -27,7 +27,7 @@ pub fn load_page_list_select_space(api: &Api) -> Result<Vec<Page>> {
 pub fn edit_id(config: &Config, id: &str) -> Result<()> {
     // full workflow for page edit: pulls page, opens nvim, pushes page
     let mut page = Page::get_page_by_id(&config.api, id)?;
-    let file_path = edit_page(config, &mut page)?;
+    let file_path = edit_page(config, &page)?;
 
     match config.auto_sync {
         Some(true) => {
@@ -51,7 +51,7 @@ pub fn edit_id(config: &Config, id: &str) -> Result<()> {
 }
 
 // Shortened workflow for TUI that does not handle upload
-pub fn edit_page(config: &Config, page: &mut Page) -> Result<PathBuf> {
+pub fn edit_page(config: &Config, page: &Page) -> Result<PathBuf> {
     let file_path = save_and_edit_page(config, page)?;
     // Save the edited file for use with --edit last
     update_edited_history(
@@ -80,7 +80,8 @@ pub fn cli_new_page(
     println!("Page Uploading...");
     let mut uploaded_page = upload_new_page(config, &user_space, title, page_path)?;
     if *should_edit {
-        save_and_edit_page(config, &mut uploaded_page)?;
+        let file_path = save_and_edit_page(config, &uploaded_page)?;
+        upload_page(&config.api, &mut uploaded_page, Some(&file_path))?;
     };
 
     update_edited_history(
@@ -92,6 +93,7 @@ pub fn cli_new_page(
     )
 }
 
+// Used for TUI to create a new page
 pub fn upload_new_page(
     config: &Config,
     space: &Space,
@@ -158,7 +160,7 @@ pub fn convert_md_string_html() -> Result<String> {
 
 // Worker functions
 
-fn save_and_edit_page(config: &Config, page: &mut Page) -> Result<PathBuf> {
+fn save_and_edit_page(config: &Config, page: &Page) -> Result<PathBuf> {
     let file_path = save_page_to_file(
         &config.save_location,
         page.id
@@ -167,7 +169,6 @@ fn save_and_edit_page(config: &Config, page: &mut Page) -> Result<PathBuf> {
         page.get_body(),
     )?;
     open_editor(&file_path, config.editor.as_ref())?;
-    upload_page(&config.api, page, Some(&file_path))?;
     Ok(file_path)
 }
 
@@ -219,8 +220,7 @@ fn convert_md_to_html(body: &mut String) -> Result<String> {
     pandoc.set_output(pandoc::OutputKind::Pipe);
     pandoc.add_option(pandoc::PandocOption::NoWrap);
     let output = pandoc.execute()?;
-    // let mut new_body = match output {
-    let new_body = match output {
+    let mut new_body = match output {
         pandoc::PandocOutput::ToBuffer(pandoc_buff) => pandoc_buff,
         _ => bail!("Pandoc returned incorrect type"),
     };
