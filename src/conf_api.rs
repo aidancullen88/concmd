@@ -321,7 +321,7 @@ impl Space {
         Ok(results.results)
     }
 
-    pub fn get_spaces_by_ids(api: &Api, id_list: &Vec<String>) -> Result<Vec<Space>> {
+    pub fn get_spaces_by_ids(api: &Api, id_list: &[String]) -> Result<Vec<Space>> {
         let id_list_str = id_list.join(",");
         let url = match &api.label {
             Some(label) => {

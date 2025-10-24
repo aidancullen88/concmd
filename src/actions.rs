@@ -162,7 +162,7 @@ pub fn convert_md_string_html() -> Result<String> {
 pub fn list_page_by_title(api: &Api, title: &str) -> Result<()> {
     let page_list = Page::get_pages_by_title(api, title)?;
     // get list of space ids
-    let space_id_list = page_list.iter().filter_map(|p| p.get_space_id()).collect();
+    let space_id_list: Vec<String> = page_list.iter().filter_map(|p| p.get_space_id()).collect();
     // get list of spaces
     let space_list = Space::get_spaces_by_ids(api, &space_id_list)?;
     let space_id_name_map: HashMap<&str, &str> = space_list
