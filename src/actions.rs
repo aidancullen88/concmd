@@ -12,6 +12,11 @@ use crate::{Api, Config};
 
 // Interface
 
+pub enum UploadType {
+    Update,
+    Create,
+}
+
 pub fn load_space_list(api: &Api) -> Result<Vec<Space>> {
     Space::get_spaces(api)
 }
@@ -33,7 +38,7 @@ pub fn edit_id(config: &Config, id: &str) -> Result<()> {
     match config.auto_sync {
         Some(true) => {
             println!("Page uploading...");
-            upload_page(&config.api, &mut page, Some(&file_path))?;
+            upload_page(&config.api, &mut page, Some(&file_path), UploadType::Update)?;
         }
         // Ask the user if they want to sync the page or not
         Some(false) | None => {
@@ -42,7 +47,7 @@ pub fn edit_id(config: &Config, id: &str) -> Result<()> {
             match user_input.as_str() {
                 "y" | "Y" | "yes" | "Yes" => {
                     println!("Page uploading...");
-                    upload_page(&config.api, &mut page, Some(&file_path))?;
+                    upload_page(&config.api, &mut page, Some(&file_path), UploadType::Update)?;
                 }
                 _ => bail!("USER_CANCEL"),
             }
@@ -55,12 +60,7 @@ pub fn edit_id(config: &Config, id: &str) -> Result<()> {
 pub fn edit_page(config: &Config, page: &Page) -> Result<PathBuf> {
     let file_path = save_and_edit_page(config, page)?;
     // Save the edited file for use with --edit last
-    update_edited_history(
-        config,
-        page.id
-            .as_ref()
-            .expect("Page to be edited should always have an ID"),
-    )?;
+    update_edited_history(config, &page.id)?;
     Ok(file_path)
 }
 
@@ -79,33 +79,37 @@ pub fn cli_new_page(
     // Let the user select the space to upload to
     let user_space = select_space(&config.api)?;
     println!("Page Uploading...");
-    let mut uploaded_page = upload_new_page(config, &user_space, title, page_path)?;
+    let mut uploaded_page = create_new_page(config, &user_space, title, page_path)?;
     if *should_edit {
         let file_path = save_and_edit_page(config, &uploaded_page)?;
-        upload_page(&config.api, &mut uploaded_page, Some(&file_path))?;
+        upload_page(
+            &config.api,
+            &mut uploaded_page,
+            Some(&file_path),
+            UploadType::Update,
+        )?;
     };
 
-    update_edited_history(
-        config,
-        uploaded_page
-            .id
-            .as_ref()
-            .expect("Uploaded page should always have ID"),
-    )
+    update_edited_history(config, &uploaded_page.id)
 }
 
 // Used for TUI to create a new page
-pub fn upload_new_page(
+pub fn create_new_page(
     config: &Config,
     space: &Space,
     title: String,
     page_path: Option<&Path>,
 ) -> Result<Page> {
     let mut new_page = Page::new(title, space.id.clone());
-    upload_page(&config.api, &mut new_page, page_path)
+    upload_page(&config.api, &mut new_page, page_path, UploadType::Create)
 }
 
-pub fn upload_page(api: &Api, page: &mut Page, file_path: Option<&Path>) -> Result<Page> {
+pub fn upload_page(
+    api: &Api,
+    page: &mut Page,
+    file_path: Option<&Path>,
+    upload_type: UploadType,
+) -> Result<Page> {
     if let Some(file_path) = file_path {
         let mut file = File::open(file_path)?;
         let mut unescaped_body = String::new();
@@ -115,9 +119,9 @@ pub fn upload_page(api: &Api, page: &mut Page, file_path: Option<&Path>) -> Resu
     };
     // "Hack" to check if we are updating a page or making a new one. Should be an explict enum
     // but...
-    match page.id {
-        Some(_) => page.update_page_by_id(api),
-        None => page.create_page(api),
+    match upload_type {
+        UploadType::Update => page.update_page_by_id(api),
+        UploadType::Create => page.create_page(api),
     }
 }
 
@@ -161,25 +165,22 @@ pub fn convert_md_string_html() -> Result<String> {
 
 pub fn list_page_by_title(api: &Api, title: &str) -> Result<()> {
     let page_list = Page::get_pages_by_title(api, title)?;
-    // get list of space ids
     let space_id_list: Vec<String> = page_list.iter().filter_map(|p| p.get_space_id()).collect();
-    // get list of spaces
     let space_list = Space::get_spaces_by_ids(api, &space_id_list)?;
+    // construct a map for fast lookup of space names
     let space_id_name_map: HashMap<&str, &str> = space_list
         .iter()
         .map(|s| (s.id.as_str(), s.name.as_str()))
         .collect();
-    // print all pages with space
+
+    // print all pages with space or "None"
     for p in page_list {
-        let page_id =
-            p.id.as_ref()
-                .expect("Pages from API should always have an ID");
         if let Some(space_id) = p.get_space_id()
             && let Some(space_name) = space_id_name_map.get(space_id.as_str())
         {
-            println!("ID: {}, Title: {}, Space: {}", page_id, p.title, space_name);
+            println!("ID: {}, Title: {}, Space: {}", p.id, p.title, space_name);
         } else {
-            println!("ID: {}, Title: {}, Space: None", page_id, p.title);
+            println!("ID: {}, Title: {}, Space: None", p.id, p.title);
         }
     }
     Ok(())
@@ -188,13 +189,7 @@ pub fn list_page_by_title(api: &Api, title: &str) -> Result<()> {
 // Worker functions
 
 fn save_and_edit_page(config: &Config, page: &Page) -> Result<PathBuf> {
-    let file_path = save_page_to_file(
-        &config.save_location,
-        page.id
-            .as_ref()
-            .expect("Editing page should always have ID"),
-        page.get_body(),
-    )?;
+    let file_path = save_page_to_file(&config.save_location, &page.id, page.get_body())?;
     open_editor(&file_path, config.editor.as_ref())?;
     Ok(file_path)
 }

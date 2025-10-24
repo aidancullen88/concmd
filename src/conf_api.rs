@@ -18,7 +18,7 @@ struct PageResults {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Page {
-    pub id: Option<String>,
+    pub id: String,
     pub title: String,
     status: String,
     pub version: Option<PageVersion>,
@@ -30,22 +30,20 @@ pub struct Page {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(untagged)]
-enum Body {
-    Download(PageBody),
-    Upload(Storage),
-    BulkFetch(BulkBody),
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct BulkBody {
+struct Body {
+    #[serde(alias = "editor")]
     storage: Storage,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct PageBody {
-    editor: Storage,
-}
+// #[derive(Serialize, Deserialize, Debug, Clone)]
+// struct BulkBody {
+//     storage: Storage,
+// }
+//
+// #[derive(Serialize, Deserialize, Debug, Clone)]
+// struct PageBody {
+//     editor: Storage,
+// }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct Storage {
@@ -66,23 +64,23 @@ impl Attr for Page {
         self.title.clone()
     }
     fn get_id(&self) -> String {
-        self.id
-            .clone()
-            .expect("page rendered should always have id")
+        self.id.clone()
     }
 }
 
 impl Page {
     // Constructor used when uploading a completely new page
     pub fn new(title: String, space_id: String) -> Page {
-        let body = Body::Upload(Storage {
-            // The body is replaced by the serialised body later, so add a placeholder
-            // for now
-            value: String::new(),
-            representation: "storage".to_string(),
-        });
+        let body = Body {
+            storage: Storage {
+                // The body is replaced by the serialised body later, so add a placeholder
+                // for now
+                value: String::new(),
+                representation: "storage".to_string(),
+            },
+        };
         Page {
-            id: None,
+            id: String::default(),
             title,
             status: "current".to_string(),
             version: None,
@@ -91,33 +89,12 @@ impl Page {
             created_at: None,
         }
     }
-    // Getter and setter for body to allow for download and upload in the same struct.
-    // Confluence expects slightly different structure for upload than what it gives
-    // for download. This is abstracted away here to make constructing the upload json
-    // a bit easier.
     pub fn get_body(&self) -> &str {
-        match &self.body {
-            Body::Upload(storage) => &storage.value,
-            Body::Download(page_body) => &page_body.editor.value,
-            Body::BulkFetch(bulk_body) => &bulk_body.storage.value,
-        }
+        &self.body.storage.value
     }
 
-    // current implementation:
-    // when body is first downloaded it is Body::Download
-    // Any time body is set, it is set to Body::Upload with the new body string
-    // and the correct represetation
     pub fn set_body(&mut self, body_value: String) {
-        match &mut self.body {
-            Body::Upload(storage) => storage.value = body_value,
-            _ => {
-                let new_body = Storage {
-                    value: body_value,
-                    representation: "storage".to_string(),
-                };
-                self.body = Body::Upload(new_body)
-            }
-        }
+        self.body.storage.value = body_value;
     }
 
     pub fn get_date_created(&self) -> String {
@@ -177,16 +154,12 @@ impl Page {
         ))?;
         current_version.number += 1;
         let serialised_body = serde_json::to_string(&self)?;
-        let current_id = self
-            .id
-            .as_ref()
-            .ok_or(anyhow!("Page without an ID cannot be updated"))?;
         let resp = send_request(
             api,
             RequestType::Put(serialised_body),
             format!(
                 "https://{}/wiki/api/v2/pages/{}",
-                api.confluence_domain, current_id
+                api.confluence_domain, &self.id
             ),
         )?;
         match resp.status().as_u16() {
@@ -232,10 +205,7 @@ impl Page {
             RequestType::Del,
             format!(
                 "https://{}/wiki/api/v2/pages/{}",
-                api.confluence_domain,
-                self.id
-                    .clone()
-                    .expect("Page to be deleted should always have an ID")
+                api.confluence_domain, &self.id
             ),
         )?;
         match resp.status().as_u16() {

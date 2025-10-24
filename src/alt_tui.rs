@@ -527,11 +527,7 @@ fn update(
         }
         Message::OpenEditor => {
             if let Some(mut page) = app.get_selected_page() {
-                app.clear_page_saved_state(
-                    page.id
-                        .as_ref()
-                        .expect("Page from API should always have an ID"),
-                );
+                app.clear_page_saved_state(&page.id);
                 let edited_file_path = run_editor(terminal, config, &mut page)?;
                 // Save the edited file path to use if the user wants to save
                 app.edited_file_path = Some(edited_file_path);
@@ -542,10 +538,7 @@ fn update(
             if let CurrentArea::SavePopup = app.current_area {
                 if let Some(page) = app.get_selected_page() {
                     // Save the page ID to the map to flag as saved in the UI
-                    app.page_states_map.insert(
-                        page.id.expect("Page from API should always have an ID"),
-                        PageState::Saved,
-                    );
+                    app.page_states_map.insert(page.id, PageState::Saved);
                     return Ok(Some(Message::Save));
                 }
                 bail!("Attempted to save without a page selected")
@@ -557,16 +550,18 @@ fn update(
             {
                 app.current_area = CurrentArea::Pages;
                 // Save the page ID to the map to flag as not saved in the UI
-                app.page_states_map.insert(
-                    page.id.expect("Page from API should always have an ID"),
-                    PageState::NotSaved,
-                );
+                app.page_states_map.insert(page.id, PageState::NotSaved);
             }
         }
         Message::Save => {
             if let CurrentArea::SavePopup = app.current_area {
                 if let Some(mut page) = app.get_selected_page() {
-                    actions::upload_page(&config.api, &mut page, app.edited_file_path.as_deref())?;
+                    actions::upload_page(
+                        &config.api,
+                        &mut page,
+                        app.edited_file_path.as_deref(),
+                        actions::UploadType::Update,
+                    )?;
                     app.current_area = CurrentArea::Pages;
                     // Refresh the page list so that pages can be edited again
                     return Ok(Some(Message::Refresh));
@@ -606,7 +601,7 @@ fn update(
             app.reset_cursor();
         }
         Message::SaveNewPage => {
-            actions::upload_new_page(
+            actions::create_new_page(
                 config,
                 &app.get_selected_space()
                     .expect("Should always be a space selected"),
@@ -954,22 +949,14 @@ fn get_name_list<A: Attr>(item_list: &[A]) -> Vec<String> {
 fn map_saved_pages(item_list: &[Page], states_hash: &HashMap<String, PageState>) -> Vec<String> {
     item_list
         .iter()
-        .map(|i| {
-            if let Some(page_id) = &i.id {
-                match states_hash.get(page_id) {
-                    Some(PageState::Saved) => {
-                        format!("✓ {}", i.get_name())
-                    }
-                    Some(PageState::NotSaved) => {
-                        format!("  {}", i.get_name())
-                    }
-                    None => format!("  {}", i.get_name()),
-                }
-            // Else branch should never be hit but is required by the complier so implemented
-            // anyway
-            } else {
+        .map(|i| match states_hash.get(&i.id) {
+            Some(PageState::Saved) => {
+                format!("✓ {}", i.get_name())
+            }
+            Some(PageState::NotSaved) => {
                 format!("  {}", i.get_name())
             }
+            None => format!("  {}", i.get_name()),
         })
         .collect()
 }
