@@ -62,6 +62,8 @@ enum Action {
     List {
         #[arg(long)]
         pages: bool,
+        #[arg(short, long, requires = "pages")]
+        title: Option<String>,
         #[arg(long)]
         spaces: bool,
     },
@@ -245,13 +247,23 @@ fn main() {
             }
             Err(e) => print_generic_error(e),
         },
-        Action::List { pages, spaces } => match (pages, spaces) {
-            (false, true) => match actions::load_space_list(&config.api) {
+        Action::List {
+            pages,
+            spaces,
+            title,
+        } => match (pages, spaces, title) {
+            // Case list --spaces
+            (false, true, None) => match actions::load_space_list(&config.api) {
                 Ok(space_list) => render_name_id_list(&space_list),
                 Err(e) => print_generic_error(e),
             },
-            (true, false) => match actions::load_page_list_select_space(&config.api) {
+            // Case list --pages
+            (true, false, None) => match actions::load_page_list_select_space(&config.api) {
                 Ok(page_list) => render_name_id_list(&page_list),
+                Err(e) => print_generic_error(e),
+            },
+            (true, false, Some(title)) => match actions::list_page_by_title(&config.api, &title) {
+                Ok(()) => {}
                 Err(e) => print_generic_error(e),
             },
             _ => panic!("Invalid option combination from CLI"),

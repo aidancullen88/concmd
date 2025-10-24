@@ -1,5 +1,5 @@
 use anyhow::{Ok, Result, anyhow, bail};
-use reqwest::blocking;
+use reqwest::blocking::{self, Response};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -129,6 +129,10 @@ impl Page {
         }
     }
 
+    pub fn get_space_id(&self) -> Option<String> {
+        self.space_id.clone()
+    }
+
     pub fn get_page_by_id(api: &Api, id: &str) -> Result<Page> {
         let resp = send_request(
             api,
@@ -141,12 +145,29 @@ impl Page {
         match resp.status().as_u16() {
             200 => Ok(serde_json::from_str::<Page>(&resp.text()?)?),
             _ => {
-                let page_error = serde_json::from_str::<GenericErrors>(&resp.text()?)?.get_error();
+                let page_error = error_from_resp(resp);
                 if page_error.code == "NOT_FOUND" {
                     bail!("Page not found: {}", page_error.title)
                 }
                 bail!("Issue fetching page: {}", page_error.title)
             }
+        }
+    }
+
+    pub fn get_pages_by_title(api: &Api, title: &str) -> Result<Vec<Page>> {
+        let resp = send_request(
+            api,
+            RequestType::Get,
+            format!(
+                "https://{}/wiki/api/v2/pages?title={}&body-format=storage",
+                api.confluence_domain, title,
+            ),
+        )?;
+        match resp.status().as_u16() {
+            200 => Ok(serde_json::from_str::<PageResults>(&resp.text()?)?.results),
+            400 => bail!("Malformed request: {}", error_from_resp(resp).title),
+            401 => bail!("GET_UNAUTH"),
+            _ => bail!("Unknown error: {}", error_from_resp(resp).title),
         }
     }
 
@@ -248,6 +269,16 @@ impl GenericErrors {
     }
 }
 
+fn error_from_resp(resp: Response) -> PageError {
+    let error = serde_json::from_str::<GenericErrors>(
+        &resp
+            .text()
+            .expect("Error response should be convertible to text"),
+    )
+    .expect("Error response should be deserialisable");
+    error.get_error()
+}
+
 #[derive(Deserialize, Debug)]
 struct SpaceResults {
     results: Vec<Space>,
@@ -282,6 +313,27 @@ impl Space {
                 format!(
                     "https://{}/wiki/api/v2/spaces?limit=250&type=global",
                     api.confluence_domain
+                )
+            }
+        };
+        let resp = send_request(api, RequestType::Get, url)?.text()?;
+        let results = serde_json::from_str::<SpaceResults>(&resp)?;
+        Ok(results.results)
+    }
+
+    pub fn get_spaces_by_ids(api: &Api, id_list: &Vec<String>) -> Result<Vec<Space>> {
+        let id_list_str = id_list.join(",");
+        let url = match &api.label {
+            Some(label) => {
+                format!(
+                    "https://{}/wiki/api/v2/spaces?limit=250&labels={}&ids={}",
+                    api.confluence_domain, label, id_list_str
+                )
+            }
+            None => {
+                format!(
+                    "https://{}/wiki/api/v2/spaces?limit=250&type=global&ids={}",
+                    api.confluence_domain, id_list_str
                 )
             }
         };

@@ -1,5 +1,6 @@
 use anyhow::{Result, bail};
 use core::panic;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -158,6 +159,32 @@ pub fn convert_md_string_html() -> Result<String> {
     convert_md_to_html(&mut body)
 }
 
+pub fn list_page_by_title(api: &Api, title: &str) -> Result<()> {
+    let page_list = Page::get_pages_by_title(api, title)?;
+    // get list of space ids
+    let space_id_list = page_list.iter().filter_map(|p| p.get_space_id()).collect();
+    // get list of spaces
+    let space_list = Space::get_spaces_by_ids(api, &space_id_list)?;
+    let space_id_name_map: HashMap<&str, &str> = space_list
+        .iter()
+        .map(|s| (s.id.as_str(), s.name.as_str()))
+        .collect();
+    // print all pages with space
+    for p in page_list {
+        let page_id =
+            p.id.as_ref()
+                .expect("Pages from API should always have an ID");
+        if let Some(space_id) = p.get_space_id()
+            && let Some(space_name) = space_id_name_map.get(space_id.as_str())
+        {
+            println!("ID: {}, Title: {}, Space: {}", page_id, p.title, space_name);
+        } else {
+            println!("ID: {}, Title: {}, Space: None", page_id, p.title);
+        }
+    }
+    Ok(())
+}
+
 // Worker functions
 
 fn save_and_edit_page(config: &Config, page: &Page) -> Result<PathBuf> {
@@ -220,7 +247,7 @@ fn convert_md_to_html(body: &mut String) -> Result<String> {
     pandoc.set_output(pandoc::OutputKind::Pipe);
     pandoc.add_option(pandoc::PandocOption::NoWrap);
     let output = pandoc.execute()?;
-    let mut new_body = match output {
+    let new_body = match output {
         pandoc::PandocOutput::ToBuffer(pandoc_buff) => pandoc_buff,
         _ => bail!("Pandoc returned incorrect type"),
     };
