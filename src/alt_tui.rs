@@ -22,7 +22,7 @@ use ratatui::text::{Line, Text};
 use ratatui::widgets::block::Title;
 use ratatui::widgets::{Block, Clear, List, ListState, Padding, Paragraph, Wrap};
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 
 /* Concmd uses the ELM architecture:
 * draw the UI based on the state
@@ -332,6 +332,7 @@ impl App {
 
     fn reset_sort(&mut self) {
         self.sort = Sort {
+            // Select the first item by default
             type_state: {
                 let mut new = ListState::default();
                 new.select_first();
@@ -525,7 +526,6 @@ fn update(
     match message {
         Message::Exit => {
             // Reset the list state so that get_selected_page returns None while exiting
-            app.page_list_state = ListState::default();
             app.exit = true;
         }
         Message::ListNext => {
@@ -563,7 +563,7 @@ fn update(
                     app.page_states_map.insert(page.id, PageState::Saved);
                     return Ok(Some(Message::Save));
                 }
-                panic!("Attempted to save without a page selected?");
+                panic!("Attempted to save without a page selected");
             }
         }
         Message::RejectSave => {
@@ -577,19 +577,19 @@ fn update(
         }
         Message::Save => {
             if let CurrentArea::SavePopup = app.current_area {
-                if let Some(mut page) = app.get_selected_page() {
-                    actions::upload_page(
-                        &config.api,
-                        &mut page,
-                        app.edited_file_path.as_deref(),
-                        actions::UploadType::Update,
-                    )?;
-                    app.current_area = CurrentArea::Pages;
-                    // Refresh the page list so that pages can be edited again
-                    return Ok(Some(Message::Refresh));
-                } else {
-                    bail!("Attempted to save without a selected page")
-                }
+                // if let Some(mut page) = app.get_selected_page() {
+                let mut page = app
+                    .get_selected_page()
+                    .expect("Should not attempt to save without a page selected");
+                actions::upload_page(
+                    &config.api,
+                    &mut page,
+                    app.edited_file_path.as_deref(),
+                    actions::UploadType::Update,
+                )?;
+                app.current_area = CurrentArea::Pages;
+                // Refresh the page list so that pages can be edited again
+                return Ok(Some(Message::Refresh));
             }
         }
         Message::Back => {
@@ -641,11 +641,17 @@ fn update(
         Message::CursorRight => app.cursor_right(),
         Message::TypeChar(value) => app.type_char(value),
 
-        Message::DeletePage => app.current_area = CurrentArea::DeletePopup,
+        Message::DeletePage => {
+            if let Some(_) = app.get_selected_page() {
+                app.current_area = CurrentArea::DeletePopup;
+            }
+        }
         Message::ConfirmDeletePage => {
-            if let Some(page) = app.get_selected_page() {
-                actions::delete_page(&config.api, &page)?;
-            };
+            actions::delete_page(
+                &config.api,
+                &app.get_selected_page()
+                    .expect("Shouldn't delete without selected page"),
+            )?;
             app.current_area = CurrentArea::Pages;
             return Ok(Some(Message::Refresh));
         }
