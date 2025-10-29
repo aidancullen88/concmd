@@ -19,6 +19,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Style, Stylize};
 use ratatui::symbols::border;
 use ratatui::text::{Line, Text};
+use ratatui::widgets::block::Title;
 use ratatui::widgets::{Block, Clear, List, ListState, Padding, Paragraph, Wrap};
 
 use anyhow::{Result, bail};
@@ -329,8 +330,29 @@ impl App {
         };
     }
 
+    fn reset_sort(&mut self) {
+        self.sort = Sort {
+            type_state: {
+                let mut new = ListState::default();
+                new.select_first();
+                new
+            },
+            dir_state: SortDirection::Asc,
+            sort_types_array: [SortType::CreatedOn, SortType::Title],
+            saved_state: (ListState::default(), SortDirection::Asc),
+        };
+    }
+
     fn clear_page_saved_state(&mut self, page_id: &str) {
         self.page_states_map.remove(page_id);
+    }
+
+    fn toggle_preview(&mut self) {
+        self.show_preview = !self.show_preview;
+    }
+
+    fn toggle_help(&mut self) {
+        self.show_help = !self.show_help;
     }
 }
 
@@ -541,7 +563,7 @@ fn update(
                     app.page_states_map.insert(page.id, PageState::Saved);
                     return Ok(Some(Message::Save));
                 }
-                bail!("Attempted to save without a page selected")
+                panic!("Attempted to save without a page selected?");
             }
         }
         Message::RejectSave => {
@@ -588,6 +610,7 @@ fn update(
         }
         Message::Refresh => {
             app.reset_search();
+            app.reset_sort();
             app.refresh_current_list(config)?;
         }
         // New page updates
@@ -631,6 +654,7 @@ fn update(
         Message::ConfirmSearch => {
             // If there was a previous search active, get the full list before applying the new
             // search
+            app.current_area = CurrentArea::Pages;
             if app.search.search_active {
                 app.refresh_current_list(config)?;
             }
@@ -639,7 +663,6 @@ fn update(
                     .to_lowercase()
                     .contains(&app.search.current_search.to_lowercase())
             });
-            app.current_area = CurrentArea::Pages;
             app.search.search_active = true;
             app.reset_cursor();
         }
@@ -653,8 +676,8 @@ fn update(
             app.current_area = CurrentArea::Pages;
             app.reset_cursor();
         }
-        Message::TogglePreview => app.show_preview = !app.show_preview,
-        Message::ToggleHelp => app.show_help = !app.show_help,
+        Message::TogglePreview => app.toggle_preview(),
+        Message::ToggleHelp => app.toggle_help(),
         Message::StartSort => {
             app.current_area = CurrentArea::SortPopup;
         }
@@ -691,10 +714,13 @@ fn draw(frame: &mut Frame, app: &mut App) {
     let container_block = Block::new()
         .title(main_title.centered())
         .title_bottom(instructions.right_aligned());
+
+    // inner_area is the main rendering space for the app
     let inner_area = container_block.inner(frame.area());
     frame.render_widget(container_block, frame.area());
 
-    let layout = Layout::default()
+    // main layout holds the two lists and the preview area
+    let main_layout = Layout::default()
         .direction(Direction::Horizontal)
         .constraints(vec![
             Constraint::Percentage(20),
@@ -718,7 +744,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
                 .fg(ratatui::style::Color::Black),
         );
 
-    frame.render_stateful_widget(space_list, layout[0], &mut app.space_list_state);
+    frame.render_stateful_widget(space_list, main_layout[0], &mut app.space_list_state);
 
     // Page list block
     // Show the page block if the search returns no pages
@@ -732,9 +758,10 @@ fn draw(frame: &mut Frame, app: &mut App) {
         let page_marked_list = map_saved_pages(&app.page_list, &app.page_states_map);
         let page_dates_list = get_created_on_list(app.page_list.clone());
 
-        let block_area = layout[1].width as usize;
+        let block_area = main_layout[1].width as usize;
 
         // Iterate through the page titles, and add the dates in page_date_list to each page title
+        // aligned with the right of the block
         let page_date_aligned_list = zip(page_marked_list, page_dates_list).map(|(p, d)| {
             let page_name_len = p.chars().count();
             let space = block_area.saturating_sub(page_name_len).saturating_sub(3);
@@ -748,19 +775,21 @@ fn draw(frame: &mut Frame, app: &mut App) {
                     .bg(ratatui::style::Color::LightYellow)
                     .fg(ratatui::style::Color::Black),
             );
-        frame.render_stateful_widget(page_list, layout[1], &mut app.page_list_state);
+        frame.render_stateful_widget(page_list, main_layout[1], &mut app.page_list_state);
 
         // If there's a page selected, render a short preview of the content to the right if the
         // app is set to show previews
-        if let Some(selected_page) = app.get_selected_page()
-            && app.show_preview
+        if app.show_preview
+            && let Some(selected_page) = app.get_selected_page()
         {
             let preview_text = actions::get_page_preview(&selected_page, 1500)
                 .expect("should always be able to preview the page");
             let preview_text_lines = preview_text.lines().count();
-            // Make a box the same size as the amount of lines in the preview
-            let internal_layout =
-                Layout::vertical([Constraint::Length(preview_text_lines as u16)]).split(layout[2]);
+            // Make a box the same size as the amount of lines in the preview. This is a rough hack
+            // but mostly works
+            let internal_layout = Layout::vertical([Constraint::Length(preview_text_lines as u16)])
+                .split(main_layout[2]);
+
             let title = Line::from("Preview".bold());
             let block = Block::bordered()
                 .title(title.centered())
@@ -774,19 +803,10 @@ fn draw(frame: &mut Frame, app: &mut App) {
         }
     }
 
-    // Save popup block
     match app.current_area {
+        // Save popup block
         CurrentArea::SavePopup => {
-            let title = Line::from("Publish Page?".bold());
-            let block = Block::bordered()
-                .border_style(Style::new().yellow())
-                .title(title.centered())
-                .padding(Padding {
-                    left: 1,
-                    right: 1,
-                    top: 1,
-                    bottom: 1,
-                });
+            let block = get_popup_box("Publish Page?".bold());
             let question =
                 Paragraph::new(Text::raw("Do you wish to save the edited page? [Y]es/[n]o"))
                     .wrap(Wrap { trim: false })
@@ -797,16 +817,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
             frame.render_widget(question, area);
         }
         CurrentArea::NewPagePopup => {
-            let title = Line::from("Enter new page title".bold());
-            let block = Block::bordered()
-                .border_style(Style::new().yellow())
-                .padding(Padding {
-                    left: 1,
-                    right: 1,
-                    top: 1,
-                    bottom: 1,
-                })
-                .title(title.centered());
+            let block = get_popup_box("Enter new page title".bold());
             let page_title = Paragraph::new(app.new_page_title.clone())
                 .wrap(Wrap { trim: false })
                 .block(block);
@@ -820,16 +831,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
             ));
         }
         CurrentArea::DeletePopup => {
-            let title = Line::from("Delete page?".bold());
-            let block = Block::bordered()
-                .border_style(Style::new().yellow())
-                .title(title.centered())
-                .padding(Padding {
-                    left: 1,
-                    right: 1,
-                    top: 1,
-                    bottom: 1,
-                });
+            let block = get_popup_box("Delete page?".bold());
             let question = Paragraph::new(Text::raw(
                 "Are you sure you want to delete this page? [Y]es/[n]o",
             ))
@@ -841,16 +843,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
             frame.render_widget(question, area);
         }
         CurrentArea::SearchPopup => {
-            let title = Line::from("Search pages".bold());
-            let block = Block::bordered()
-                .border_style(Style::new().yellow())
-                .padding(Padding {
-                    left: 1,
-                    right: 1,
-                    top: 1,
-                    bottom: 1,
-                })
-                .title(title.centered());
+            let block = get_popup_box("Search pages".bold());
             let current_search = Paragraph::new(app.search.current_search.clone())
                 .wrap(Wrap { trim: false })
                 .block(block);
@@ -865,17 +858,8 @@ fn draw(frame: &mut Frame, app: &mut App) {
             ));
         }
         CurrentArea::SortPopup => {
-            let title = Line::from("Order pages".bold());
             let popup_area = popup_area(frame.area(), 50, 10);
-            let order_block = Block::bordered()
-                .border_style(Style::new().yellow())
-                .padding(Padding {
-                    left: 1,
-                    right: 1,
-                    top: 1,
-                    bottom: 1,
-                })
-                .title(title.centered());
+            let order_block = get_popup_box("Order pages".bold());
             frame.render_widget(Clear, popup_area);
             frame.render_widget(order_block, popup_area);
 
@@ -927,6 +911,19 @@ fn popup_area(area: Rect, max_x: u16, max_y: u16) -> Rect {
     let [area] = vertical.areas(area);
     let [area] = horizontal.areas(area);
     area
+}
+
+// Get the generic popup box
+fn get_popup_box<'a>(title: impl Into<Line<'a>>) -> Block<'a> {
+    Block::bordered()
+        .border_style(Style::new().yellow())
+        .padding(Padding {
+            left: 1,
+            right: 1,
+            top: 1,
+            bottom: 1,
+        })
+        .title(Title::from(title))
 }
 
 // Pass terminal control to the editor correctly and then take it back once it exits
