@@ -40,26 +40,36 @@ use anyhow::Result;
 
 // Holds the entire state of the app
 struct App {
-    pub space_list: Vec<Space>,
-    pub page_list: Vec<Page>,
+    space_list: Vec<Space>,
+    page_list: Vec<Page>,
     // Holds the ratatui list state (selected item) for each list
-    pub space_list_state: ListState,
-    pub page_list_state: ListState,
+    space_list_state: ListState,
+    page_list_state: ListState,
     // Tracks which area is active for keystrokes to apply to
-    pub current_area: CurrentArea,
-    pub exit: bool,
+    current_area: CurrentArea,
+    exit: bool,
     // Used to transfer the edited file details between the edit and save updates
-    pub edited_file_path: Option<PathBuf>,
+    edited_file_path: Option<PathBuf>,
     // Holds the saved states for edited pages for display in the pages list
-    pub page_states_map: HashMap<String, PageState>,
-    pub new_page_title: String,
+    page_states_map: HashMap<String, PageState>,
+    new_page_title: String,
     // "Universal" cursor for text entry fields. Make sure to clear after using!
-    pub cursor_negative_offset: usize,
-    pub search: Search,
+    cursor_negative_offset: usize,
+    search: Search,
     // Toggles for keybinds to turn features on and off
-    pub show_preview: bool,
-    pub show_help: bool,
-    pub sort: Sort,
+    show_preview: bool,
+    show_help: bool,
+    sort: Sort,
+    space_list_pos: Bounds,
+    page_list_pos: Bounds,
+}
+
+#[derive(Default)]
+struct Bounds {
+    left: u16,
+    right: u16,
+    top: u16,
+    bottom: u16,
 }
 
 struct Search {
@@ -135,6 +145,8 @@ impl App {
                 sort_types_array: [SortType::CreatedOn, SortType::Title],
                 saved_state: (ListState::default(), SortDirection::Asc),
             },
+            space_list_pos: Bounds::default(),
+            page_list_pos: Bounds::default(),
         }
     }
 
@@ -363,15 +375,30 @@ impl App {
         self.show_help = !self.show_help;
     }
 
-    fn mouse_select_list(&mut self, y: u16) {
-        let list_state = match self.current_area {
-            CurrentArea::Spaces => &mut self.space_list_state,
-            CurrentArea::Pages => &mut self.page_list_state,
-            CurrentArea::SortPopup => &mut self.sort.type_state,
+    fn mouse_select_list(&mut self, x: u16, y: u16) {
+        let (list_state, list_pos, list_length) = match self.current_area {
+            CurrentArea::Spaces => (
+                &mut self.space_list_state,
+                &self.space_list_pos,
+                &self.space_list.len(),
+            ),
+            CurrentArea::Pages => (
+                &mut self.page_list_state,
+                &self.page_list_pos,
+                &self.page_list.len(),
+            ),
             // List nav keys don't do anything unless we're focused on a list, so return
             _ => return,
         };
-        let top_ui_offset = 2;
+        let top_ui_offset = list_pos.top + 1;
+        if x <= list_pos.left
+            || x >= list_pos.right
+            || y <= list_pos.top
+            || y as usize >= list_length - list_state.offset() + top_ui_offset as usize
+        {
+            list_state.select(None);
+            return;
+        }
         let mouse_list_selection_point: i16 = y as i16 - top_ui_offset as i16;
         let mouse_list_selection_index = mouse_list_selection_point + list_state.offset() as i16;
         if mouse_list_selection_index >= 0 {
@@ -737,8 +764,8 @@ fn update(
             app.current_area = CurrentArea::Pages;
         }
         Message::ToggleSortDir => app.toggle_sort_dir(),
-        Message::MouseSelect(_, y) => {
-            app.mouse_select_list(y);
+        Message::MouseSelect(x, y) => {
+            app.mouse_select_list(x, y);
         }
     }
     Ok(None)
@@ -794,7 +821,9 @@ fn draw(frame: &mut Frame, app: &mut App) {
                 .fg(ratatui::style::Color::Black),
         );
 
-    frame.render_stateful_widget(space_list, main_layout[0], &mut app.space_list_state);
+    let space_layout = main_layout[0];
+    frame.render_stateful_widget(space_list, space_layout, &mut app.space_list_state);
+    app.space_list_pos = get_rect_bounds(&space_layout);
 
     // Page list block
     // Show the page block if the search returns no pages
@@ -825,7 +854,9 @@ fn draw(frame: &mut Frame, app: &mut App) {
                     .bg(ratatui::style::Color::LightYellow)
                     .fg(ratatui::style::Color::Black),
             );
-        frame.render_stateful_widget(page_list, main_layout[1], &mut app.page_list_state);
+        let page_layout = main_layout[1];
+        frame.render_stateful_widget(page_list, page_layout, &mut app.page_list_state);
+        app.page_list_pos = get_rect_bounds(&page_layout);
 
         // If there's a page selected, render a short preview of the content to the right if the
         // app is set to show previews
@@ -974,6 +1005,15 @@ fn get_popup_box<'a>(title: impl Into<Line<'a>>) -> Block<'a> {
             bottom: 1,
         })
         .title(Title::from(title))
+}
+
+fn get_rect_bounds(layout: &Rect) -> Bounds {
+    Bounds {
+        left: layout.x,
+        right: layout.x + layout.width,
+        top: layout.y,
+        bottom: layout.y + layout.height,
+    }
 }
 
 // Pass terminal control to the editor correctly and then take it back once it exits
