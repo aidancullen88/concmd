@@ -69,7 +69,7 @@ struct Bounds {
     left: u16,
     right: u16,
     top: u16,
-    bottom: u16,
+    // bottom: u16,
 }
 
 struct Search {
@@ -500,14 +500,14 @@ fn handle_events(app: &App) -> Result<Option<Message>> {
 fn handle_mouse_event(mouse_event: MouseEvent, current_area: &CurrentArea) -> Option<Message> {
     match current_area {
         CurrentArea::Spaces | CurrentArea::Pages => match mouse_event.kind {
-            MouseEventKind::ScrollUp => return Some(Message::ListPrevious),
-            MouseEventKind::ScrollDown => return Some(Message::ListNext),
-            MouseEventKind::Down(mouse_button) if matches!(mouse_button, MouseButton::Left) => {
-                return Some(Message::MouseSelect(mouse_event.column, mouse_event.row));
+            MouseEventKind::ScrollUp => Some(Message::ListPrevious),
+            MouseEventKind::ScrollDown => Some(Message::ListNext),
+            MouseEventKind::Down(MouseButton::Left) => {
+                Some(Message::MouseSelect(mouse_event.column, mouse_event.row))
             }
-            _ => return None,
+            _ => None,
         },
-        _ => return None,
+        _ => None,
     }
 }
 
@@ -710,7 +710,7 @@ fn update(
         Message::TypeChar(value) => app.type_char(value),
 
         Message::DeletePage => {
-            if let Some(_) = app.get_selected_page() {
+            if app.get_selected_page().is_some() {
                 app.current_area = CurrentArea::DeletePopup;
             }
         }
@@ -1012,7 +1012,7 @@ fn get_rect_bounds(layout: &Rect) -> Bounds {
         left: layout.x,
         right: layout.x + layout.width,
         top: layout.y,
-        bottom: layout.y + layout.height,
+        // bottom: layout.y + layout.height,
     }
 }
 
