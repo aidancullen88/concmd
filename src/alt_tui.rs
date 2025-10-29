@@ -8,10 +8,17 @@ use std::path::PathBuf;
 use crate::conf_api::{Attr, Page, Space};
 use crate::{Config, actions};
 
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+// use crossterm::event::{
+//     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseEvent,
+//     MouseEventKind,
+// };
 use ratatui::DefaultTerminal;
 use ratatui::Frame;
 use ratatui::crossterm::ExecutableCommand;
+use ratatui::crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseButton,
+    MouseEvent, MouseEventKind,
+};
 use ratatui::crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
@@ -355,6 +362,22 @@ impl App {
     fn toggle_help(&mut self) {
         self.show_help = !self.show_help;
     }
+
+    fn mouse_select_list(&mut self, y: u16) {
+        let list_state = match self.current_area {
+            CurrentArea::Spaces => &mut self.space_list_state,
+            CurrentArea::Pages => &mut self.page_list_state,
+            CurrentArea::SortPopup => &mut self.sort.type_state,
+            // List nav keys don't do anything unless we're focused on a list, so return
+            _ => return,
+        };
+        let top_ui_offset = 2;
+        let mouse_list_selection_point: i16 = y as i16 - top_ui_offset as i16;
+        let mouse_list_selection_index = mouse_list_selection_point + list_state.offset() as i16;
+        if mouse_list_selection_index >= 0 {
+            list_state.select(Some(mouse_list_selection_index as usize));
+        }
+    }
 }
 
 // Represents all possible user actions in the app
@@ -388,6 +411,7 @@ enum Message {
     ConfirmSort,
     CancelSort,
     ToggleSortDir,
+    MouseSelect(u16, u16),
 }
 
 // Possible states for an edited page to end up in
@@ -413,10 +437,12 @@ enum CurrentArea {
 // Entry point for the TUI
 pub fn display(config: &Config) -> Result<()> {
     let mut terminal = ratatui::init();
+    stdout().execute(EnableMouseCapture)?;
     let spaces = actions::load_space_list(&config.api)?;
     let mut app = App::new(spaces);
     // Store the result here so we can reset the terminal even if it's an error
     let result = run(config, &mut terminal, &mut app);
+    stdout().execute(DisableMouseCapture)?;
     ratatui::restore();
     result
 }
@@ -437,25 +463,40 @@ fn run(config: &Config, terminal: &mut DefaultTerminal, app: &mut App) -> Result
 fn handle_events(app: &App) -> Result<Option<Message>> {
     match event::read()? {
         Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-            Ok(handle_key_event(key_event, app))
+            Ok(handle_key_event(key_event.code, &app.current_area))
         }
+        Event::Mouse(mouse_event) => Ok(handle_mouse_event(mouse_event, &app.current_area)),
         _ => Ok(None),
     }
 }
 
+fn handle_mouse_event(mouse_event: MouseEvent, current_area: &CurrentArea) -> Option<Message> {
+    match current_area {
+        CurrentArea::Spaces | CurrentArea::Pages => match mouse_event.kind {
+            MouseEventKind::ScrollUp => return Some(Message::ListPrevious),
+            MouseEventKind::ScrollDown => return Some(Message::ListNext),
+            MouseEventKind::Down(mouse_button) if matches!(mouse_button, MouseButton::Left) => {
+                return Some(Message::MouseSelect(mouse_event.column, mouse_event.row));
+            }
+            _ => return None,
+        },
+        _ => return None,
+    }
+}
+
 // Match a keycode to the correct message
-fn handle_key_event(key_event: KeyEvent, app: &App) -> Option<Message> {
+fn handle_key_event(key_event: KeyCode, current_area: &CurrentArea) -> Option<Message> {
     // Universal events apply across all areas
     // match for more events in future instead of if let
-    match key_event.code {
+    match key_event {
         KeyCode::Char('q') => return Some(Message::Exit),
         KeyCode::Char('?') => return Some(Message::ToggleHelp),
         _ => {}
     }
 
     // Events for each area
-    match app.current_area {
-        CurrentArea::Spaces => match key_event.code {
+    match current_area {
+        CurrentArea::Spaces => match key_event {
             KeyCode::Up => Some(Message::ListPrevious),
             KeyCode::Down => Some(Message::ListNext),
             KeyCode::Left => Some(Message::Back),
@@ -463,7 +504,7 @@ fn handle_key_event(key_event: KeyEvent, app: &App) -> Option<Message> {
             KeyCode::Char('r') => Some(Message::Refresh),
             _ => None,
         },
-        CurrentArea::Pages => match key_event.code {
+        CurrentArea::Pages => match key_event {
             KeyCode::Up => Some(Message::ListPrevious),
             KeyCode::Down => Some(Message::ListNext),
             KeyCode::Left => Some(Message::Back),
@@ -476,12 +517,12 @@ fn handle_key_event(key_event: KeyEvent, app: &App) -> Option<Message> {
             KeyCode::Char('o') => Some(Message::StartSort),
             _ => None,
         },
-        CurrentArea::SavePopup => match key_event.code {
+        CurrentArea::SavePopup => match key_event {
             KeyCode::Char('y') | KeyCode::Char('Y') => Some(Message::ConfirmSave),
             KeyCode::Char('n') | KeyCode::Char('N') => Some(Message::RejectSave),
             _ => None,
         },
-        CurrentArea::NewPagePopup => match key_event.code {
+        CurrentArea::NewPagePopup => match key_event {
             KeyCode::Enter => Some(Message::SaveNewPage),
             KeyCode::Esc => Some(Message::CancelNewPage),
             KeyCode::Backspace => Some(Message::Backspace),
@@ -490,12 +531,12 @@ fn handle_key_event(key_event: KeyEvent, app: &App) -> Option<Message> {
             KeyCode::Char(value) => Some(Message::TypeChar(value)),
             _ => None,
         },
-        CurrentArea::DeletePopup => match key_event.code {
+        CurrentArea::DeletePopup => match key_event {
             KeyCode::Char('y') | KeyCode::Char('Y') => Some(Message::ConfirmDeletePage),
             KeyCode::Char('n') | KeyCode::Char('N') => Some(Message::CancelDeletePage),
             _ => None,
         },
-        CurrentArea::SearchPopup => match key_event.code {
+        CurrentArea::SearchPopup => match key_event {
             KeyCode::Enter => Some(Message::ConfirmSearch),
             KeyCode::Esc => Some(Message::CancelSearch),
             KeyCode::Backspace => Some(Message::Backspace),
@@ -504,7 +545,7 @@ fn handle_key_event(key_event: KeyEvent, app: &App) -> Option<Message> {
             KeyCode::Char(value) => Some(Message::TypeChar(value)),
             _ => None,
         },
-        CurrentArea::SortPopup => match key_event.code {
+        CurrentArea::SortPopup => match key_event {
             KeyCode::Enter => Some(Message::ConfirmSort),
             KeyCode::Esc => Some(Message::CancelSort),
             KeyCode::Up => Some(Message::ListPrevious),
@@ -696,6 +737,9 @@ fn update(
             app.current_area = CurrentArea::Pages;
         }
         Message::ToggleSortDir => app.toggle_sort_dir(),
+        Message::MouseSelect(_, y) => {
+            app.mouse_select_list(y);
+        }
     }
     Ok(None)
 }
@@ -966,4 +1010,22 @@ fn map_saved_pages(item_list: &[Page], states_hash: &HashMap<String, PageState>)
 
 fn get_created_on_list(page_list: Vec<Page>) -> Vec<String> {
     page_list.iter().map(|p| p.get_date_created()).collect()
+}
+
+#[test]
+fn check_exit_all_areas() {
+    use CurrentArea::*;
+    static AREAS: [CurrentArea; 7] = [
+        Spaces,
+        Pages,
+        SavePopup,
+        NewPagePopup,
+        DeletePopup,
+        SearchPopup,
+        SortPopup,
+    ];
+    for area in AREAS.iter() {
+        let result = handle_key_event(KeyCode::Char('q'), &area);
+        assert!(matches!(result, Some(Message::Exit)));
+    }
 }
