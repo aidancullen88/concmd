@@ -837,14 +837,33 @@ fn draw(frame: &mut Frame, app: &mut App) {
         let page_marked_list = map_saved_pages(&app.page_list, &app.page_states_map);
         let page_dates_list = get_created_on_list(app.page_list.clone());
 
-        let block_area = main_layout[1].width as usize;
+        let block_area = main_layout[1].width;
 
         // Iterate through the page titles, and add the dates in page_date_list to each page title
         // aligned with the right of the block
+        // Make it so that the name goes 3 dot mode if it's too long for the date
         let page_date_aligned_list = zip(page_marked_list, page_dates_list).map(|(p, d)| {
+            const DATE_LEN_PADDED: u16 = 13;
             let page_name_len = p.chars().count();
-            let space = block_area.saturating_sub(page_name_len).saturating_sub(3);
-            format!("{}{:>width$}", p, d, width = space)
+            let space = block_area
+                .saturating_sub(
+                    TryFrom::try_from(page_name_len)
+                        .unwrap_or_else(|_| panic!("Page name was bigger than u16: {}", p)),
+                )
+                .saturating_sub(DATE_LEN_PADDED);
+            if space == 0 {
+                const ELLIPSES_LEN: u16 = 3;
+                let page_space = block_area.saturating_sub(DATE_LEN_PADDED + ELLIPSES_LEN);
+                let mut truncated_page = p.clone();
+                truncated_page.truncate(usize::from(page_space));
+                format!("{}...{}\n{}", truncated_page, d, space)
+            } else {
+                let padding = " ".repeat(usize::from(space));
+                format!(
+                    "{}{}{}\n{} {} {}",
+                    p, padding, d, block_area, page_name_len, space,
+                )
+            }
         });
 
         let page_list = List::new(page_date_aligned_list)
