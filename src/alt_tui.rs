@@ -539,7 +539,7 @@ fn handle_key_event(key_event: KeyCode, current_area: &CurrentArea) -> Option<Me
             KeyCode::Char('r') => Some(Message::Refresh),
             KeyCode::Char('n') => Some(Message::NewPage),
             KeyCode::Char('d') => Some(Message::DeletePage),
-            KeyCode::Char('s') => Some(Message::StartSearch),
+            KeyCode::Char('s') | KeyCode::Char('/') => Some(Message::StartSearch),
             KeyCode::Char('p') => Some(Message::TogglePreview),
             KeyCode::Char('o') => Some(Message::StartSort),
             _ => None,
@@ -811,7 +811,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
 
     let block = Block::bordered()
         .title(title.centered())
-        .border_set(border::THICK);
+        .border_set(border::PLAIN);
 
     let space_list = List::new(get_name_list(&app.space_list))
         .block(block)
@@ -832,7 +832,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
 
         let block = Block::bordered()
             .title(title.centered())
-            .border_set(border::THICK);
+            .border_set(border::PLAIN);
 
         let page_marked_list = map_saved_pages(&app.page_list, &app.page_states_map);
         let page_dates_list = get_created_on_list(app.page_list.clone());
@@ -874,29 +874,41 @@ fn draw(frame: &mut Frame, app: &mut App) {
         frame.render_stateful_widget(page_list, page_layout, &mut app.page_list_state);
         app.page_list_pos = get_rect_bounds(&page_layout);
 
-        // If there's a page selected, render a short preview of the content to the right if the
-        // app is set to show previews
-        if app.show_preview
-            && let Some(selected_page) = app.get_selected_page()
-        {
-            let preview_text = actions::get_page_preview(&selected_page, 1500)
-                .expect("should always be able to preview the page");
-            let preview_text_lines = preview_text.lines().count();
-            // Make a box the same size as the amount of lines in the preview. This is a rough hack
-            // but mostly works
-            let internal_layout = Layout::vertical([Constraint::Length(preview_text_lines as u16)])
-                .split(main_layout[2]);
+        let internal_layout =
+            Layout::vertical([Constraint::Length(4), Constraint::Fill(1)]).split(main_layout[2]);
 
-            let title = Line::from("Preview".bold());
-            let block = Block::bordered()
-                .title(title.centered())
+        if let Some(selected_page) = app.get_selected_page() {
+            let details_title = Line::from("Summary".bold());
+            let details_block = Block::bordered()
+                .title(details_title.centered())
                 .border_set(border::PLAIN);
-            let preview = Paragraph::new(Text::from(preview_text))
-                .wrap(Wrap { trim: false })
-                .block(block)
-                .left_aligned();
+            let summary = Paragraph::new(Text::from(format!(
+                "Title: {}\nCreated On: {}",
+                selected_page.title,
+                selected_page.get_date_created()
+            )))
+            .block(details_block)
+            .left_aligned();
 
-            frame.render_widget(preview, internal_layout[0]);
+            frame.render_widget(summary, internal_layout[0]);
+
+            // If there's a page selected, render a short preview of the content to the right if the
+            // app is set to show previews
+            if app.show_preview {
+                let preview_text = actions::get_page_preview(&selected_page, 2500)
+                    .expect("should always be able to preview the page");
+
+                let title = Line::from("Preview".bold());
+                let block = Block::bordered()
+                    .title(title.centered())
+                    .border_set(border::PLAIN);
+                let preview = Paragraph::new(Text::from(preview_text))
+                    .wrap(Wrap { trim: false })
+                    .block(block)
+                    .left_aligned();
+
+                frame.render_widget(preview, internal_layout[1]);
+            }
         }
     }
 
