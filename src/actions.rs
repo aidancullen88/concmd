@@ -42,8 +42,7 @@ pub fn edit_id(config: &Config, id: &str) -> Result<()> {
         }
         // Ask the user if they want to sync the page or not
         Some(false) | None => {
-            print!("Publish page: y/n?: ");
-            let user_input: String = text_io::read!("{}\n");
+            let user_input = get_user_input(Some("Publish page: y/n?: "))?;
             match user_input.as_str() {
                 "y" | "Y" | "yes" | "Yes" => {
                     println!("Page uploading...");
@@ -321,10 +320,10 @@ fn get_history_id(history_path: &Path) -> Result<String> {
 
 fn select_space(api: &Api) -> Result<Space> {
     let space_list = load_space_list(api)?;
-    Ok(user_choose_space(space_list))
+    Ok(user_choose_space(space_list)?)
 }
 
-fn user_choose_space(mut space_list: Vec<Space>) -> Space {
+fn user_choose_space(mut space_list: Vec<Space>) -> Result<Space> {
     println!("Available Spaces:");
     for (i, space) in space_list.iter().enumerate() {
         println!(
@@ -335,10 +334,9 @@ fn user_choose_space(mut space_list: Vec<Space>) -> Space {
             &space.key
         );
     }
-    print!("Enter the number of the space to select: ");
     let max_selection = space_list.len() + 1;
     let selection = loop {
-        let user_input: String = text_io::read!("{}\n");
+        let user_input = get_user_input(Some("Enter the number of the space to select: "))?;
         match user_input.parse::<usize>() {
             Ok(selection) if 0 < selection && selection <= max_selection => break selection,
             _ => {
@@ -347,5 +345,17 @@ fn user_choose_space(mut space_list: Vec<Space>) -> Space {
             }
         }
     };
-    space_list.remove(selection - 1)
+    Ok(space_list.remove(selection - 1))
+}
+
+fn get_user_input(prompt_option: Option<&str>) -> Result<String> {
+    if let Some(prompt) = prompt_option {
+        print!("{}", prompt);
+    }
+    std::io::stdout().flush()?;
+    let user_input = std::io::stdin()
+        .lines()
+        .next()
+        .expect("Should always be a user input line")?;
+    Ok(user_input)
 }

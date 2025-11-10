@@ -11,7 +11,6 @@ clap = { version = "4.5.9", features = ["derive"] }
 reqwest = {version = "0.12.5", features = ["blocking"]}
 serde = { version = "1.0.204", features = ["derive"] }
 serde_json = "1.0.120"
-text_io = "0.1.12"
 toml = "0.8.15"
 pandoc = "0.8.11"
 cursive = "0.21"
@@ -19,6 +18,7 @@ ratatui = "0.29.0"
 crossterm = "0.29.0"
 edit = "0.1.5"
 dirs = "6.0.0"
+lib_cfm = { path = "../lib_cfm/" }
 
 [target.'cfg(target_family = "unix")'.dependencies]
 expanduser = "1.2.2"
