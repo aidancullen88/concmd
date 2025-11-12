@@ -895,7 +895,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
             // If there's a page selected, render a short preview of the content to the right if the
             // app is set to show previews
             if app.show_preview {
-                let preview_text = actions::get_page_preview(&selected_page, 2500)
+                let preview_text = actions::get_page_preview(&selected_page, 3500)
                     .expect("should always be able to preview the page");
 
                 let title = Line::from("Preview".bold());

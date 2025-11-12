@@ -1,5 +1,4 @@
 use anyhow::{Result, bail};
-use core::panic;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -219,35 +218,45 @@ fn update_edited_history(config: &Config, id: &str) -> Result<()> {
 }
 
 fn convert_html_to_md(body: &str) -> Result<String> {
-    let mut pandoc = pandoc::new();
-    pandoc.set_input_format(pandoc::InputFormat::Html, vec![]);
-    pandoc.set_input(pandoc::InputKind::Pipe(body.to_string()));
-    pandoc.set_output_format(pandoc::OutputFormat::MarkdownGithub, vec![]);
-    pandoc.set_output(pandoc::OutputKind::Pipe);
-    pandoc.add_option(pandoc::PandocOption::NoWrap);
-    let output = pandoc.execute()?;
-    match output {
-        pandoc::PandocOutput::ToBuffer(pandoc_buff) => Ok(pandoc_buff),
-        _ => panic!("Pandoc returned incorrect type"),
-    }
+    // let mut pandoc = pandoc::new();
+    // pandoc.set_input_format(pandoc::InputFormat::Html, vec![]);
+    // pandoc.set_input(pandoc::InputKind::Pipe(body.to_string()));
+    // pandoc.set_output_format(pandoc::OutputFormat::MarkdownGithub, vec![]);
+    // pandoc.set_output(pandoc::OutputKind::Pipe);
+    // pandoc.add_option(pandoc::PandocOption::NoWrap);
+    // let output = pandoc.execute()?;
+    // match output {
+    //     pandoc::PandocOutput::ToBuffer(pandoc_buff) => Ok(pandoc_buff),
+    //     _ => panic!("Pandoc returned incorrect type"),
+    // }
+    let converter = htmd::HtmlToMarkdown::builder()
+        .options(htmd::options::Options {
+            translation_mode: htmd::options::TranslationMode::Faithful,
+            ..Default::default()
+        })
+        .build();
+    let output = converter.convert(body)?;
+    Ok(output)
 }
 
 fn convert_md_to_html(body: &mut String) -> Result<String> {
-    // let removed_content = test_remove_code_block(body);
-    let mut pandoc = pandoc::new();
-    pandoc.set_input_format(pandoc::InputFormat::MarkdownGithub, vec![]);
-    pandoc.set_input(pandoc::InputKind::Pipe(body.to_string()));
-    pandoc.set_output_format(pandoc::OutputFormat::Html, vec![]);
-    pandoc.set_output(pandoc::OutputKind::Pipe);
-    pandoc.add_option(pandoc::PandocOption::NoWrap);
-    let output = pandoc.execute()?;
-    let new_body = match output {
-        pandoc::PandocOutput::ToBuffer(pandoc_buff) => pandoc_buff,
-        _ => bail!("Pandoc returned incorrect type"),
-    };
-    // if let Some(content) = removed_content {
-    //     test_reinsert_content(&content, &mut new_body);
-    // }
+    // // let removed_content = test_remove_code_block(body);
+    // let mut pandoc = pandoc::new();
+    // pandoc.set_input_format(pandoc::InputFormat::MarkdownGithub, vec![]);
+    // pandoc.set_input(pandoc::InputKind::Pipe(body.to_string()));
+    // pandoc.set_output_format(pandoc::OutputFormat::Html, vec![]);
+    // pandoc.set_output(pandoc::OutputKind::Pipe);
+    // pandoc.add_option(pandoc::PandocOption::NoWrap);
+    // let output = pandoc.execute()?;
+    // let new_body = match output {
+    //     pandoc::PandocOutput::ToBuffer(pandoc_buff) => pandoc_buff,
+    //     _ => bail!("Pandoc returned incorrect type"),
+    // };
+    // // if let Some(content) = removed_content {
+    // //     test_reinsert_content(&content, &mut new_body);
+    // // }
+    let new_body = markdown::to_html_with_options(body, &markdown::Options::gfm())
+        .map_err(|_| anyhow::anyhow!("Failed to parse markdown"))?;
     Ok(new_body)
 }
 
