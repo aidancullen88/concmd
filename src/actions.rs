@@ -63,8 +63,10 @@ pub fn edit_page(config: &Config, page: &Page) -> Result<PathBuf> {
 }
 
 pub fn edit_last_page(config: &Config) -> Result<()> {
-    let history_path = get_history_path_or_default(config)?;
-    let history_id = get_history_id(&history_path)?;
+    let history_id = match get_history_id(config)? {
+        Some(history_id) => history_id,
+        None => bail!("Attempted to edit last page with no history record"),
+    };
     edit_id(config, &history_id)
 }
 
@@ -184,6 +186,17 @@ pub fn list_page_by_title(api: &Api, title: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn delete_local_files(config: &Config) -> Result<()> {
+    let history_id = get_history_id(config)?;
+    std::fs::remove_dir_all(&config.save_location)?;
+    std::fs::create_dir(&config.save_location)?;
+    if let Some(history_id) = history_id {
+        let history_path = get_history_path_or_default(config)?;
+        std::fs::write(history_path, history_id)?;
+    };
+    Ok(())
+}
+
 // Worker functions
 
 fn save_and_edit_page(config: &Config, page: &Page) -> Result<PathBuf> {
@@ -205,7 +218,7 @@ fn save_page_to_file(location: &Path, id: &str, body: &str) -> Result<PathBuf> {
             std::fs::create_dir(dir_path)?;
             File::create(&file_path)?
         }
-        Err(e) => bail!("File creation failed with error {}", e.to_string()),
+        Err(e) => bail!("File creation failed with error {}", e),
     };
     file.write_all(converted_body.as_bytes())?;
     Ok(file_path)
@@ -231,7 +244,6 @@ fn convert_html_to_md(body: &str) -> Result<String> {
     // }
     let converter = htmd::HtmlToMarkdown::builder()
         .options(htmd::options::Options {
-            translation_mode: htmd::options::TranslationMode::Faithful,
             ..Default::default()
         })
         .build();
@@ -239,7 +251,7 @@ fn convert_html_to_md(body: &str) -> Result<String> {
     Ok(output)
 }
 
-fn convert_md_to_html(body: &mut String) -> Result<String> {
+fn convert_md_to_html(body: &mut str) -> Result<String> {
     // // let removed_content = test_remove_code_block(body);
     // let mut pandoc = pandoc::new();
     // pandoc.set_input_format(pandoc::InputFormat::MarkdownGithub, vec![]);
@@ -310,26 +322,35 @@ fn get_history_path_or_default(config: &Config) -> Result<PathBuf> {
         Some(path) => path,
         None => &config.save_location,
     };
-    if !std::fs::exists(history_dir_path)? {
-        std::fs::create_dir(history_dir_path)?
+    let full_history_path = history_dir_path.join("history.txt");
+    if !std::fs::exists(&full_history_path)? {
+        std::fs::create_dir_all(history_dir_path)?;
+        std::fs::File::create(&full_history_path)?;
     };
-    Ok(history_dir_path.join("history.txt"))
+    Ok(full_history_path)
 }
 
 fn get_last_page(config: &Config) -> Result<Page> {
-    let history_path = get_history_path_or_default(config)?;
-    let history_id = get_history_id(&history_path)?;
+    let history_id = match get_history_id(config)? {
+        Some(history_id) => history_id,
+        None => bail!("Attemped to get history when none present"),
+    };
     get_page_by_id(&config.api, &history_id)
 }
 
-fn get_history_id(history_path: &Path) -> Result<String> {
-    let history_id = String::from_utf8(std::fs::read(history_path)?)?;
-    Ok(history_id)
+fn get_history_id(config: &Config) -> Result<Option<String>> {
+    let history_path = get_history_path_or_default(config)?;
+    let history_string = String::from_utf8(std::fs::read(history_path)?)?;
+    match history_string.as_str() {
+        his_string if his_string.chars().all(|c| c.is_alphanumeric()) => Ok(Some(history_string)),
+        "" => Ok(None),
+        _ => bail!("Invalid history string"),
+    }
 }
 
 fn select_space(api: &Api) -> Result<Space> {
     let space_list = load_space_list(api)?;
-    Ok(user_choose_space(space_list)?)
+    user_choose_space(space_list)
 }
 
 fn user_choose_space(mut space_list: Vec<Space>) -> Result<Space> {

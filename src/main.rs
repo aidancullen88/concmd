@@ -74,6 +74,8 @@ enum Action {
         #[arg(long)]
         html: bool,
     },
+    // Purges local saved pages
+    Purge,
 }
 
 // Config structure. Note deserialize_with for save_location, see fn
@@ -272,6 +274,10 @@ fn main() {
             },
             (false, true) => todo!("Conversion the other way not impl yet"),
             _ => panic!("Invalid option combination from clap"),
+        },
+        Action::Purge => match actions::delete_local_files(&config) {
+            Ok(()) => {}
+            Err(e) => print_generic_error(e),
         },
     }
 }
