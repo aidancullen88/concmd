@@ -120,8 +120,8 @@ pub fn upload_page(
     // "Hack" to check if we are updating a page or making a new one. Should be an explict enum
     // but...
     match upload_type {
-        UploadType::Update => page.update_page_by_id(api),
-        UploadType::Create => page.create_page(api),
+        UploadType::Update => page.update(api),
+        UploadType::Create => page.create(api),
     }
 }
 
@@ -131,7 +131,11 @@ pub fn delete_page_by_id(api: &Api, id: &str) -> Result<()> {
 }
 
 pub fn delete_page(api: &Api, page: &Page) -> Result<()> {
-    page.delete_page(api)
+    page.delete(api)
+}
+
+pub fn update_page_title(api: &Api, page: &Page, new_title: String) -> Result<()> {
+    page.update_title(api, new_title)
 }
 
 // Get a truncated view of the page for the TUI

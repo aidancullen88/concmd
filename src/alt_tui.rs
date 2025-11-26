@@ -62,6 +62,7 @@ struct App {
     sort: Sort,
     space_list_pos: Bounds,
     page_list_pos: Bounds,
+    page_updated_title: String,
 }
 
 #[derive(Default)]
@@ -147,6 +148,7 @@ impl App {
             },
             space_list_pos: Bounds::default(),
             page_list_pos: Bounds::default(),
+            page_updated_title: String::new(),
         }
     }
 
@@ -262,6 +264,7 @@ impl App {
         let current_text = match self.current_area {
             CurrentArea::NewPagePopup => &mut self.new_page_title,
             CurrentArea::SearchPopup => &mut self.search.current_search,
+            CurrentArea::TitlePopup => &mut self.page_updated_title,
             _ => return,
         };
         let current_length = current_text.len();
@@ -279,6 +282,7 @@ impl App {
         let current_text = match self.current_area {
             CurrentArea::NewPagePopup => &mut self.new_page_title,
             CurrentArea::SearchPopup => &mut self.search.current_search,
+            CurrentArea::TitlePopup => &mut self.page_updated_title,
             _ => return,
         };
         let current_title_length = current_text.len();
@@ -298,6 +302,7 @@ impl App {
         let current_text = match self.current_area {
             CurrentArea::NewPagePopup => &mut self.new_page_title,
             CurrentArea::SearchPopup => &mut self.search.current_search,
+            CurrentArea::TitlePopup => &mut self.page_updated_title,
             _ => return,
         };
         let current_cursor_position = current_text.len() - self.cursor_negative_offset;
@@ -439,6 +444,9 @@ enum Message {
     CancelSort,
     ToggleSortDir,
     MouseSelect(u16, u16),
+    UpdateTitle,
+    ConfirmTitle,
+    CancelTitle,
 }
 
 // Possible states for an edited page to end up in
@@ -459,6 +467,7 @@ enum CurrentArea {
     DeletePopup,
     SearchPopup,
     SortPopup,
+    TitlePopup,
 }
 
 // Entry point for the TUI
@@ -542,6 +551,7 @@ fn handle_key_event(key_event: KeyCode, current_area: &CurrentArea) -> Option<Me
             KeyCode::Char('s') | KeyCode::Char('/') => Some(Message::StartSearch),
             KeyCode::Char('p') => Some(Message::TogglePreview),
             KeyCode::Char('o') => Some(Message::StartSort),
+            KeyCode::Char('t') => Some(Message::UpdateTitle),
             _ => None,
         },
         CurrentArea::SavePopup => match key_event {
@@ -578,6 +588,15 @@ fn handle_key_event(key_event: KeyCode, current_area: &CurrentArea) -> Option<Me
             KeyCode::Up => Some(Message::ListPrevious),
             KeyCode::Down => Some(Message::ListNext),
             KeyCode::Char('d') => Some(Message::ToggleSortDir),
+            _ => None,
+        },
+        CurrentArea::TitlePopup => match key_event {
+            KeyCode::Enter => Some(Message::ConfirmTitle),
+            KeyCode::Esc => Some(Message::CancelTitle),
+            KeyCode::Backspace => Some(Message::Backspace),
+            KeyCode::Left => Some(Message::CursorLeft),
+            KeyCode::Right => Some(Message::CursorRight),
+            KeyCode::Char(value) => Some(Message::TypeChar(value)),
             _ => None,
         },
     }
@@ -767,6 +786,27 @@ fn update(
         Message::MouseSelect(x, y) => {
             app.mouse_select_list(x, y);
         }
+        Message::UpdateTitle => {
+            app.current_area = CurrentArea::TitlePopup;
+            app.page_updated_title = app
+                .get_selected_page()
+                .expect("Should be a page selected")
+                .title;
+        }
+        Message::CancelTitle => {
+            app.current_area = CurrentArea::Pages;
+            app.page_updated_title = String::new();
+            app.reset_cursor();
+        }
+        Message::ConfirmTitle => {
+            let current_page = app
+                .get_selected_page()
+                .expect("Should always be a page selected");
+            actions::update_page_title(&config.api, &current_page, app.page_updated_title.clone())?;
+            app.reset_cursor();
+            app.current_area = CurrentArea::Pages;
+            return Ok(Some(Message::Refresh));
+        }
     }
     Ok(None)
 }
@@ -778,7 +818,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
         match &app.current_area {
             CurrentArea::Spaces => Line::from("[r]efresh spaces | [q]uit | ? to close help "),
             CurrentArea::Pages => Line::from(
-                "[r]efresh pages (clear search) | [n]ew page | [d]elete page | [s]earch pages | [o]rder by | toggle [p]review | [q]uit | ? to close help ",
+                "[r]efresh pages (clear search) | [n]ew page | [d]elete page | update [t]itle | [s]earch pages | [o]rder by | toggle [p]review | [q]uit | ? to close help ",
             ),
             CurrentArea::SavePopup => Line::from("[q]uit (without saving) "),
             CurrentArea::SortPopup => Line::from("toggle [d]irection "),
@@ -926,7 +966,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
             frame.render_widget(question, area);
         }
         CurrentArea::NewPagePopup => {
-            let block = get_popup_box("Enter new page title".bold());
+            let block = get_popup_box("Enter title for new page".bold());
             let page_title = Paragraph::new(app.new_page_title.clone())
                 .wrap(Wrap { trim: false })
                 .block(block);
@@ -1005,6 +1045,21 @@ fn draw(frame: &mut Frame, app: &mut App) {
                 .wrap(Wrap { trim: false })
                 .block(dir_block);
             frame.render_widget(current_dir, inner_layout[1]);
+        }
+        CurrentArea::TitlePopup => {
+            let block = get_popup_box("Update page title".bold());
+            let page_title = Paragraph::new(app.page_updated_title.clone())
+                .wrap(Wrap { trim: false })
+                .block(block);
+            let area = popup_area(frame.area(), 40, 5);
+            frame.render_widget(Clear, area);
+            frame.render_widget(page_title, area);
+            // x and y are offset by 2 to account for padding
+            frame.set_cursor_position((
+                area.x + 2 + app.page_updated_title.len() as u16
+                    - app.cursor_negative_offset as u16,
+                area.y + 2,
+            ));
         }
         _ => {}
     }

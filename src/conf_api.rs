@@ -148,7 +148,7 @@ impl Page {
         }
     }
 
-    pub fn update_page_by_id(&mut self, api: &Api) -> Result<Page> {
+    pub fn update(&mut self, api: &Api) -> Result<Page> {
         let current_version = self.version.as_mut().ok_or(anyhow!(
             "Page without version information cannot be updated"
         ))?;
@@ -168,7 +168,34 @@ impl Page {
         }
     }
 
-    pub fn create_page(&mut self, api: &Api) -> Result<Page> {
+    pub fn update_title(&self, api: &Api, new_title: String) -> Result<()> {
+        #[derive(Serialize)]
+        struct TitleUpdate {
+            status: String,
+            title: String,
+        }
+        let body = serde_json::to_string(&TitleUpdate {
+            status: "current".to_string(),
+            title: new_title,
+        })?;
+        let resp = send_request(
+            api,
+            RequestType::Put(body),
+            format!(
+                "https://{}/wiki/api/v2/pages/{}/title",
+                api.confluence_domain, &self.id
+            ),
+        )?;
+        match resp.status().as_u16() {
+            200 => Ok(()),
+            _ => bail!(
+                "Title change failed with error: {}",
+                error_from_resp(resp).title
+            ),
+        }
+    }
+
+    pub fn create(&mut self, api: &Api) -> Result<Page> {
         let serialised_body = serde_json::to_string(&self)?;
         let resp = send_request(
             api,
@@ -199,7 +226,7 @@ impl Page {
         Ok(results.results)
     }
 
-    pub fn delete_page(&self, api: &Api) -> Result<()> {
+    pub fn delete(&self, api: &Api) -> Result<()> {
         let resp = send_request(
             api,
             RequestType::Del,
