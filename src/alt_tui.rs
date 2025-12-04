@@ -485,7 +485,7 @@ pub fn display(config: &Config) -> Result<()> {
 }
 
 fn draw_start_screen(frame: &mut Frame) {
-    let container_block = Block::bordered().title(Line::from("Concmd".bold()).centered());
+    let container_block = Block::new().title(Line::from("Concmd".bold()).centered());
     frame.render_widget(container_block, frame.area());
     let layout = Layout::default()
         .direction(Direction::Vertical)
