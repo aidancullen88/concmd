@@ -474,6 +474,7 @@ enum CurrentArea {
 pub fn display(config: &Config) -> Result<()> {
     let mut terminal = ratatui::init();
     stdout().execute(EnableMouseCapture)?;
+    terminal.draw(draw_start_screen)?;
     let spaces = actions::load_space_list(&config.api)?;
     let mut app = App::new(spaces);
     // Store the result here so we can reset the terminal even if it's an error
@@ -481,6 +482,21 @@ pub fn display(config: &Config) -> Result<()> {
     stdout().execute(DisableMouseCapture)?;
     ratatui::restore();
     result
+}
+
+fn draw_start_screen(frame: &mut Frame) {
+    let container_block = Block::bordered().title(Line::from("Concmd".bold()).centered());
+    frame.render_widget(container_block, frame.area());
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(vec![
+            Constraint::Percentage(40),
+            Constraint::Percentage(10),
+            Constraint::Percentage(50),
+        ])
+        .split(frame.area());
+    let loading_text = Paragraph::new(Line::from("Loading spaces...".bold())).centered();
+    frame.render_widget(loading_text, layout[1]);
 }
 
 fn run(config: &Config, terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
