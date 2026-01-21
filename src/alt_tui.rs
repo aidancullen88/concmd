@@ -5,7 +5,7 @@ use std::io::stdout;
 use std::iter::zip;
 use std::path::PathBuf;
 
-use crate::conf_api::{Attr, Page, Space};
+use crate::conf_api::{HasAttr, Page, Space};
 use crate::{Config, actions};
 
 // use crossterm::event::{
@@ -40,6 +40,7 @@ use anyhow::Result;
 
 // Holds the entire state of the app
 struct App {
+    domain: String,
     space_list: Vec<Space>,
     page_list: Vec<Page>,
     // Holds the ratatui list state (selected item) for each list
@@ -116,8 +117,9 @@ impl fmt::Display for SortDirection {
 }
 
 impl App {
-    fn new(space_list: Vec<Space>) -> App {
+    fn new(space_list: Vec<Space>, domain: String) -> App {
         App {
+            domain,
             space_list,
             space_list_state: ListState::default(),
             // Empty list displays the same as None, and we don't have to unwrap the option every
@@ -397,11 +399,12 @@ impl App {
         };
         let top_ui_offset = list_pos.top + 1;
         if x <= list_pos.left
-            || x >= list_pos.right
             || y <= list_pos.top
             || y as usize >= list_length - list_state.offset() + top_ui_offset as usize
         {
             list_state.select(None);
+            return;
+        } else if x >= list_pos.right {
             return;
         }
         let mouse_list_selection_point: i16 = y as i16 - top_ui_offset as i16;
@@ -447,6 +450,8 @@ enum Message {
     UpdateTitle,
     ConfirmTitle,
     CancelTitle,
+    ShowUrl,
+    CloseUrl,
 }
 
 // Possible states for an edited page to end up in
@@ -468,6 +473,7 @@ enum CurrentArea {
     SearchPopup,
     SortPopup,
     TitlePopup,
+    UrlPopup,
 }
 
 // Entry point for the TUI
@@ -476,7 +482,7 @@ pub fn display(config: &Config) -> Result<()> {
     stdout().execute(EnableMouseCapture)?;
     terminal.draw(draw_start_screen)?;
     let spaces = actions::load_space_list(&config.api)?;
-    let mut app = App::new(spaces);
+    let mut app = App::new(spaces, config.api.confluence_domain.clone());
     // Store the result here so we can reset the terminal even if it's an error
     let result = run(config, &mut terminal, &mut app);
     stdout().execute(DisableMouseCapture)?;
@@ -568,6 +574,7 @@ fn handle_key_event(key_event: KeyCode, current_area: &CurrentArea) -> Option<Me
             KeyCode::Char('p') => Some(Message::TogglePreview),
             KeyCode::Char('o') => Some(Message::StartSort),
             KeyCode::Char('t') => Some(Message::UpdateTitle),
+            KeyCode::Char('u') => Some(Message::ShowUrl),
             _ => None,
         },
         CurrentArea::SavePopup => match key_event {
@@ -613,6 +620,10 @@ fn handle_key_event(key_event: KeyCode, current_area: &CurrentArea) -> Option<Me
             KeyCode::Left => Some(Message::CursorLeft),
             KeyCode::Right => Some(Message::CursorRight),
             KeyCode::Char(value) => Some(Message::TypeChar(value)),
+            _ => None,
+        },
+        CurrentArea::UrlPopup => match key_event {
+            KeyCode::Enter | KeyCode::Esc => Some(Message::CloseUrl),
             _ => None,
         },
     }
@@ -823,6 +834,14 @@ fn update(
             app.current_area = CurrentArea::Pages;
             return Ok(Some(Message::Refresh));
         }
+        Message::ShowUrl => {
+            app.current_area = CurrentArea::UrlPopup;
+            stdout().execute(DisableMouseCapture)?;
+        }
+        Message::CloseUrl => {
+            app.current_area = CurrentArea::Pages;
+            stdout().execute(EnableMouseCapture)?;
+        }
     }
     Ok(None)
 }
@@ -930,8 +949,10 @@ fn draw(frame: &mut Frame, app: &mut App) {
         frame.render_stateful_widget(page_list, page_layout, &mut app.page_list_state);
         app.page_list_pos = get_rect_bounds(&page_layout);
 
+        // Page summary block
+
         let internal_layout =
-            Layout::vertical([Constraint::Length(4), Constraint::Fill(1)]).split(main_layout[2]);
+            Layout::vertical([Constraint::Length(5), Constraint::Fill(1)]).split(main_layout[2]);
 
         if let Some(selected_page) = app.get_selected_page() {
             let details_title = Line::from("Summary".bold());
@@ -939,9 +960,11 @@ fn draw(frame: &mut Frame, app: &mut App) {
                 .title(details_title.centered())
                 .border_set(border::PLAIN);
             let summary = Paragraph::new(Text::from(format!(
-                "Title: {}\nCreated On: {}",
+                "Title: {}\nCreated On: {}\nURL: https://{}/wiki{}",
                 selected_page.title,
-                selected_page.get_date_created()
+                selected_page.get_date_created(),
+                app.domain,
+                selected_page.get_page_link(),
             )))
             .block(details_block)
             .left_aligned();
@@ -1077,6 +1100,24 @@ fn draw(frame: &mut Frame, app: &mut App) {
                 area.y + 2,
             ));
         }
+        CurrentArea::UrlPopup => {
+            let block = get_popup_box("Page URL for copy".bold());
+            let selected_page = if let Some(page) = app.get_selected_page() {
+                page
+            } else {
+                return;
+            };
+            let page_url = Paragraph::new(Text::from(format!(
+                "https://{}/wiki{}",
+                app.domain,
+                selected_page.get_page_link(),
+            )))
+            .wrap(Wrap { trim: false })
+            .block(block);
+            let area = popup_area(frame.area(), 50, 5);
+            frame.render_widget(Clear, area);
+            frame.render_widget(page_url, area);
+        }
         _ => {}
     }
 }
@@ -1116,18 +1157,21 @@ fn get_rect_bounds(layout: &Rect) -> Bounds {
 }
 
 // Pass terminal control to the editor correctly and then take it back once it exits
+// Note that mouse capture must also be turned off and on here to work correctly
 fn run_editor(terminal: &mut DefaultTerminal, config: &Config, page: &mut Page) -> Result<PathBuf> {
     stdout().execute(LeaveAlternateScreen)?;
+    stdout().execute(DisableMouseCapture)?;
     disable_raw_mode()?;
     let file_path = actions::edit_page(config, page)?;
     stdout().execute(EnterAlternateScreen)?;
     enable_raw_mode()?;
     terminal.clear()?;
+    stdout().execute(EnableMouseCapture)?;
     Ok(file_path)
 }
 
-// Anything that implements Named can be turned into a list of names for the ui
-fn get_name_list<A: Attr>(item_list: &[A]) -> Vec<String> {
+// Anything that implements HasAttr has ID and name, and so can be turned into a list of names
+fn get_name_list(item_list: &[impl HasAttr]) -> Vec<String> {
     item_list.iter().map(|i| i.get_name()).collect()
 }
 

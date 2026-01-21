@@ -6,7 +6,7 @@ use std::fmt;
 use crate::Api;
 
 // Used for generic functions over pages and spaces for the UI rendering
-pub trait Attr {
+pub trait HasAttr {
     fn get_name(&self) -> String;
     fn get_id(&self) -> String;
 }
@@ -27,6 +27,8 @@ pub struct Page {
     body: Body,
     #[serde(rename = "createdAt")]
     created_at: Option<String>,
+    #[serde(rename = "_links")]
+    links: PageLinks,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -59,7 +61,13 @@ pub struct PageVersion {
     // pub created_at: String,
 }
 
-impl Attr for Page {
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct PageLinks {
+    pub webui: String,
+    tinyui: String,
+}
+
+impl HasAttr for Page {
     fn get_name(&self) -> String {
         self.title.clone()
     }
@@ -87,6 +95,10 @@ impl Page {
             space_id: Some(space_id),
             body,
             created_at: None,
+            links: PageLinks {
+                webui: String::default(),
+                tinyui: String::default(),
+            },
         }
     }
     pub fn get_body(&self) -> &str {
@@ -104,6 +116,10 @@ impl Page {
         } else {
             "".to_owned()
         }
+    }
+
+    pub fn get_page_link(&self) -> &str {
+        &self.links.tinyui
     }
 
     pub fn get_space_id(&self) -> Option<String> {
@@ -288,7 +304,7 @@ pub struct Space {
     pub name: String,
 }
 
-impl Attr for Space {
+impl HasAttr for Space {
     fn get_name(&self) -> String {
         self.name.clone()
     }

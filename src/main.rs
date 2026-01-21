@@ -16,7 +16,7 @@ use std::{
 
 use clap::{ArgGroup, Parser};
 
-use crate::conf_api::Attr;
+use crate::conf_api::HasAttr;
 
 // Command line interface for clap
 #[derive(Parser, Debug)]
@@ -286,15 +286,20 @@ fn main() {
 // ~/.config/concmd directory.
 #[cfg(target_family = "unix")]
 fn get_config() -> Result<Config> {
-    let mut home_dir = dirs::home_dir().ok_or(anyhow::anyhow!("Home dir could not be found"))?;
-    home_dir.push(".config/concmd/config.toml");
+    let config_location: PathBuf = if let Ok(xdg_config_string) = std::env::var("XDG_CONFIG_HOME") {
+        PathBuf::from_iter([&xdg_config_string, "/concmd/config.toml"])
+    } else {
+        std::env::home_dir()
+            .expect("User's home directory should always exist")
+            .join(".config/concmd/config.toml")
+    };
 
-    Config::read_config(&home_dir)
+    Config::read_config(&config_location)
 }
 
 #[cfg(target_family = "windows")]
 fn get_config() -> Result<Config> {
-    let mut home_dir = dirs::home_dir().expect("home dir should always exist");
+    let mut home_dir = std::env::home_dir().expect("home dir should always exist");
     println!("{:?}", home_dir);
     home_dir.push("AppData\\Roaming\\concmd\\config.toml");
 
@@ -303,7 +308,8 @@ fn get_config() -> Result<Config> {
     Config::read_config(&home_dir)
 }
 
-fn render_name_id_list<A: Attr>(items: &[A]) {
+// Types that impl HasAttr have a name and ID to display e.g. pages, spaces
+fn render_name_id_list<A: HasAttr>(items: &[A]) {
     for i in items.iter() {
         println!("ID: {}, Title: {}", i.get_id(), i.get_name())
     }
