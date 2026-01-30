@@ -91,6 +91,7 @@ struct Config {
     auto_sync: Option<bool>,
     api: Api,
     editor: Option<Editor>,
+    browser: Option<String>,
 }
 
 #[cfg(target_family = "windows")]
@@ -101,6 +102,7 @@ struct Config {
     auto_sync: Option<bool>,
     api: Api,
     editor: Option<Editor>,
+    browser: Option<String>,
 }
 
 impl Config {
@@ -282,18 +284,17 @@ fn main() {
     }
 }
 
-// Helper function to add the home dir to the config path. Config is always expected to live in the
-// ~/.config/concmd directory.
+// Helper function to add the home dir to the config path. Config is expected to be in EITHER
+// $XDG_CONFIG_HOME/concmd/config.toml OR $HOME/.config/concmd/config.toml (these are usually the
+// same)
 #[cfg(target_family = "unix")]
 fn get_config() -> Result<Config> {
-    let config_location: PathBuf = if let Ok(xdg_config_string) = std::env::var("XDG_CONFIG_HOME") {
-        PathBuf::from_iter([&xdg_config_string, "/concmd/config.toml"])
-    } else {
-        std::env::home_dir()
+    let config_location = match std::env::var("XDG_CONFIG_HOME") {
+        Ok(xdg_config_string) => PathBuf::from_iter([&xdg_config_string, "concmd/config.toml"]),
+        Err(_) => std::env::home_dir()
             .expect("User's home directory should always exist")
-            .join(".config/concmd/config.toml")
+            .join(".config/concmd/config.toml"),
     };
-
     Config::read_config(&config_location)
 }
 

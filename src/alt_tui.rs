@@ -452,6 +452,7 @@ enum Message {
     CancelTitle,
     ShowUrl,
     CloseUrl,
+    OpenBrowser,
 }
 
 // Possible states for an edited page to end up in
@@ -575,6 +576,7 @@ fn handle_key_event(key_event: KeyCode, current_area: &CurrentArea) -> Option<Me
             KeyCode::Char('o') => Some(Message::StartSort),
             KeyCode::Char('t') => Some(Message::UpdateTitle),
             KeyCode::Char('u') => Some(Message::ShowUrl),
+            KeyCode::Char('b') => Some(Message::OpenBrowser),
             _ => None,
         },
         CurrentArea::SavePopup => match key_event {
@@ -842,6 +844,15 @@ fn update(
             app.current_area = CurrentArea::Pages;
             stdout().execute(EnableMouseCapture)?;
         }
+        Message::OpenBrowser => {
+            if let Some(current_page) = app.get_selected_page() {
+                actions::open_page_in_browser(
+                    &current_page.get_page_url(),
+                    config.browser.as_ref().unwrap(),
+                )?
+                // TODO: figure out if detailed error for no browser or just fail silently or crash
+            }
+        }
     }
     Ok(None)
 }
@@ -964,7 +975,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
                 selected_page.title,
                 selected_page.get_date_created(),
                 app.domain,
-                selected_page.get_page_link(),
+                selected_page.get_page_url(),
             )))
             .block(details_block)
             .left_aligned();
@@ -1110,7 +1121,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
             let page_url = Paragraph::new(Text::from(format!(
                 "https://{}/wiki{}",
                 app.domain,
-                selected_page.get_page_link(),
+                selected_page.get_page_url(),
             )))
             .wrap(Wrap { trim: false })
             .block(block);

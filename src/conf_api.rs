@@ -118,7 +118,7 @@ impl Page {
         }
     }
 
-    pub fn get_page_link(&self) -> &str {
+    pub fn get_page_url(&self) -> &str {
         &self.links.tinyui
     }
 
