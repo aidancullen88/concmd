@@ -164,7 +164,13 @@ pub fn get_page_by_id(api: &Api, id: &str) -> Result<Page> {
 pub fn convert_md_string_html() -> Result<String> {
     let mut body = String::new();
     std::io::stdin().read_to_string(&mut body)?;
-    convert_md_to_html(&mut body)
+    convert_md_to_html(&body)
+}
+
+pub fn convert_html_string_md() -> Result<String> {
+    let mut body = String::new();
+    std::io::stdin().read_to_string(&mut body)?;
+    convert_html_to_md(&body)
 }
 
 pub fn list_page_by_title(api: &Api, title: &str) -> Result<()> {
@@ -271,24 +277,24 @@ fn convert_html_to_md(body: &str) -> Result<String> {
     Ok(output)
 }
 
-fn convert_md_to_html(body: &mut str) -> Result<String> {
-    // // let removed_content = test_remove_code_block(body);
-    // let mut pandoc = pandoc::new();
-    // pandoc.set_input_format(pandoc::InputFormat::MarkdownGithub, vec![]);
-    // pandoc.set_input(pandoc::InputKind::Pipe(body.to_string()));
-    // pandoc.set_output_format(pandoc::OutputFormat::Html, vec![]);
-    // pandoc.set_output(pandoc::OutputKind::Pipe);
-    // pandoc.add_option(pandoc::PandocOption::NoWrap);
-    // let output = pandoc.execute()?;
-    // let new_body = match output {
-    //     pandoc::PandocOutput::ToBuffer(pandoc_buff) => pandoc_buff,
-    //     _ => bail!("Pandoc returned incorrect type"),
-    // };
+fn convert_md_to_html(body: &str) -> Result<String> {
+    // let removed_content = test_remove_code_block(body);
+    let mut pandoc = pandoc::new();
+    pandoc.set_input_format(pandoc::InputFormat::MarkdownGithub, vec![]);
+    pandoc.set_input(pandoc::InputKind::Pipe(body.to_string()));
+    pandoc.set_output_format(pandoc::OutputFormat::Html, vec![]);
+    pandoc.set_output(pandoc::OutputKind::Pipe);
+    pandoc.add_option(pandoc::PandocOption::NoWrap);
+    let output = pandoc.execute()?;
+    let new_body = match output {
+        pandoc::PandocOutput::ToBuffer(pandoc_buff) => pandoc_buff,
+        _ => bail!("Pandoc returned incorrect type"),
+    };
     // // if let Some(content) = removed_content {
     // //     test_reinsert_content(&content, &mut new_body);
     // // }
-    let new_body = markdown::to_html_with_options(body, &markdown::Options::gfm())
-        .map_err(|_| anyhow::anyhow!("Failed to parse markdown"))?;
+    // let new_body = markdown::to_html_with_options(body, &markdown::Options::gfm())
+    //     .map_err(|_| anyhow::anyhow!("Failed to parse markdown"))?;
     Ok(new_body)
 }
 

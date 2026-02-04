@@ -848,8 +848,8 @@ fn update(
             if let Some(current_page) = app.get_selected_page() {
                 actions::open_page_in_browser(
                     &current_page.get_page_url(),
-                    config.browser.as_ref().unwrap(),
-                )?
+                    config.browser.as_ref().expect("No browser set in config"),
+                )?;
                 // TODO: figure out if detailed error for no browser or just fail silently or crash
             }
         }
@@ -864,7 +864,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
         match &app.current_area {
             CurrentArea::Spaces => Line::from("[r]efresh spaces | [q]uit | ? to close help "),
             CurrentArea::Pages => Line::from(
-                "[r]efresh pages (clear search) | [n]ew page | [d]elete page | update [t]itle | [s]earch pages | [o]rder by | toggle [p]review | [q]uit | ? to close help ",
+                "[r]efresh pages (clear search) | [n]ew page | [d]elete page | update [t]itle | [s]earch pages | [o]rder by | toggle [p]review | open in [b]rowser | [q]uit | ? to close help ",
             ),
             CurrentArea::SavePopup => Line::from("[q]uit (without saving) "),
             CurrentArea::SortPopup => Line::from("toggle [d]irection "),
@@ -1118,14 +1118,16 @@ fn draw(frame: &mut Frame, app: &mut App) {
             } else {
                 return;
             };
-            let page_url = Paragraph::new(Text::from(format!(
+            let url_string = format!(
                 "https://{}/wiki{}",
                 app.domain,
-                selected_page.get_page_url(),
-            )))
-            .wrap(Wrap { trim: false })
-            .block(block);
-            let area = popup_area(frame.area(), 50, 5);
+                selected_page.get_page_url()
+            );
+            let page_url = Paragraph::new(Text::from(url_string.as_str()))
+                .wrap(Wrap { trim: false })
+                .block(block);
+            let para_width = url_string.len();
+            let area = popup_area(frame.area(), (para_width + 5) as u16, 5);
             frame.render_widget(Clear, area);
             frame.render_widget(page_url, area);
         }

@@ -28,7 +28,8 @@ struct Args {
 
 #[derive(Debug, clap::Subcommand)]
 enum Action {
-    // Require either the id or the --last arg
+    /// Opens a page to be edited given the ID. Can also open the last edited page or preview the
+    /// page
     #[clap(group(ArgGroup::new("edit_mode").required(true).args(&["id", "last"])))]
     Edit {
         /// Re-open the last page to be edited
@@ -41,7 +42,9 @@ enum Action {
         #[arg(short, long)]
         preview: Option<u16>,
     },
+    /// Opens the TUI interface
     View,
+    /// Create a new page, either from an existing file or from scratch
     New {
         /// Use an existing file to create the new page
         #[arg(long, short)]
@@ -53,11 +56,13 @@ enum Action {
         #[arg(long, short)]
         edit: bool,
     },
+    /// Deletes a page given its ID
     Delete {
         /// ID of the page to delete
         #[arg(long, short)]
         id: String,
     },
+    /// Lists spaces, pages within a space, or pages with the same title across spaces
     #[clap(group(ArgGroup::new("list_mode").required(true).args(&["pages", "spaces"])))]
     List {
         #[arg(long)]
@@ -67,14 +72,17 @@ enum Action {
         #[arg(long)]
         spaces: bool,
     },
+    /// Convert stdin input md <-> html
     #[clap(group(ArgGroup::new("convert_mode").required(true).args(&["md", "html"])))]
     Convert {
+        /// Convert stdin input from md to html
         #[arg(long)]
         md: bool,
+        /// Convert stdin input from html to md
         #[arg(long)]
         html: bool,
     },
-    // Purges local saved pages
+    /// Deletes all local copies of pages
     Purge,
 }
 
@@ -274,7 +282,10 @@ fn main() {
                 Ok(result_string) => println!("{}", result_string),
                 Err(e) => print_generic_error(e),
             },
-            (false, true) => todo!("Conversion the other way not impl yet"),
+            (false, true) => match actions::convert_html_string_md() {
+                Ok(result_string) => println!("{}", result_string),
+                Err(e) => print_generic_error(e),
+            },
             _ => panic!("Invalid option combination from clap"),
         },
         Action::Purge => match actions::delete_local_files(&config) {
