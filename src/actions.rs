@@ -115,7 +115,7 @@ pub fn upload_page(
         let mut unescaped_body = String::new();
         file.read_to_string(&mut unescaped_body)?;
         // Replace the existing page body with the converted body
-        page.set_body(convert_md_to_html(&mut unescaped_body)?);
+        page.set_body(convert_md_to_html(&unescaped_body)?);
     };
     // "Hack" to check if we are updating a page or making a new one. Should be an explict enum
     // but...

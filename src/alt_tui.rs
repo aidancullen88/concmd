@@ -29,7 +29,7 @@ use ratatui::text::{Line, Text};
 use ratatui::widgets::block::Title;
 use ratatui::widgets::{Block, Clear, List, ListState, Padding, Paragraph, Wrap};
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 
 /* Concmd uses the ELM architecture:
 * draw the UI based on the state
@@ -482,7 +482,14 @@ pub fn display(config: &Config) -> Result<()> {
     let mut terminal = ratatui::init();
     stdout().execute(EnableMouseCapture)?;
     terminal.draw(draw_start_screen)?;
-    let spaces = actions::load_space_list(&config.api)?;
+    let spaces = match actions::load_space_list(&config.api) {
+        Ok(space_list) => space_list,
+        Err(e) => {
+            stdout().execute(DisableMouseCapture)?;
+            ratatui::restore();
+            bail!("Space list could not be loaded: {}", e);
+        }
+    };
     let mut app = App::new(spaces, config.api.confluence_domain.clone());
     // Store the result here so we can reset the terminal even if it's an error
     let result = run(config, &mut terminal, &mut app);
@@ -847,7 +854,7 @@ fn update(
         Message::OpenBrowser => {
             if let Some(current_page) = app.get_selected_page() {
                 actions::open_page_in_browser(
-                    &current_page.get_page_url(),
+                    current_page.get_page_url(),
                     config.browser.as_ref().expect("No browser set in config"),
                 )?;
                 // TODO: figure out if detailed error for no browser or just fail silently or crash

@@ -178,18 +178,22 @@ fn main() {
         Action::Edit { id, last, preview } => {
             let result =
                 match (last, id, preview) {
+                    // Edit the last edited page
+                    (true, None, None) => actions::edit_last_page(&config)
+                        .map(|_| println!("Page edited successfully!")),
+                    // Edit page with given ID
+                    (false, Some(id), None) => actions::edit_id(&config, &id)
+                        .map(|_| println!("Page edited successfully!")),
+                    // Show the preview for the last edited page
                     (true, None, Some(preview)) => {
                         actions::get_last_page_preview(&config, preview as usize)
                             .map(|s| println!("{}", s))
                     }
-                    (true, None, None) => actions::edit_last_page(&config)
-                        .map(|_| println!("Page edited successfully!")),
+                    // Show the preview for the given ID
                     (false, Some(id), Some(preview)) => {
                         actions::get_page_preview_by_id(&config, &id, preview as usize)
                             .map(|s| println!("{}", s))
                     }
-                    (false, Some(id), None) => actions::edit_id(&config, &id)
-                        .map(|_| println!("Page edited successfully!")),
                     _ => panic!("Unsupported CLI arguments set"),
                 };
 
@@ -271,6 +275,7 @@ fn main() {
                 Ok(page_list) => render_name_id_list(&page_list),
                 Err(e) => print_generic_error(e),
             },
+            // Case list --title
             (true, false, Some(title)) => match actions::list_page_by_title(&config.api, &title) {
                 Ok(()) => {}
                 Err(e) => print_generic_error(e),
@@ -278,10 +283,12 @@ fn main() {
             _ => panic!("Invalid option combination from CLI"),
         },
         Action::Convert { md, html } => match (md, html) {
+            // Convert md to html
             (true, false) => match actions::convert_md_string_html() {
                 Ok(result_string) => println!("{}", result_string),
                 Err(e) => print_generic_error(e),
             },
+            // Convert html to md
             (false, true) => match actions::convert_html_string_md() {
                 Ok(result_string) => println!("{}", result_string),
                 Err(e) => print_generic_error(e),
