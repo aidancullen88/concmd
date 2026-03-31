@@ -935,24 +935,24 @@ fn draw(frame: &mut Frame, app: &mut App) {
         // Iterate through the page titles, and add the dates in page_date_list to each page title
         // aligned with the right of the block
         // Make it so that the name goes 3 dot mode if it's too long for the date
-        let page_date_aligned_list = zip(page_marked_list, page_dates_list).map(|(p, d)| {
+        let page_date_aligned_list = zip(page_marked_list, page_dates_list).map(|(page_name, page_date)| {
             const DATE_LEN_PADDED: u16 = 13;
-            let page_name_len = p.chars().count();
+            let page_name_len = page_name.chars().count();
             let space = block_area
                 .saturating_sub(
                     TryFrom::try_from(page_name_len)
-                        .unwrap_or_else(|_| panic!("Page name was bigger than u16: {}", p)),
+                        .unwrap_or_else(|_| panic!("Page name was bigger than u16: {}", page_name)),
                 )
                 .saturating_sub(DATE_LEN_PADDED);
             if space == 0 {
                 const ELLIPSES_LEN: u16 = 3;
                 let page_space = block_area.saturating_sub(DATE_LEN_PADDED + ELLIPSES_LEN);
-                let mut truncated_page = p.clone();
+                let mut truncated_page = page_name.clone();
                 truncated_page.truncate(usize::from(page_space));
-                format!("{}...{}", truncated_page, d)
+                format!("{}...{}", truncated_page, page_date, page_name_len, page_space)
             } else {
                 let padding = " ".repeat(usize::from(space));
-                format!("{}{}{}", p, padding, d)
+                format!("{}{}{}", page_name, padding, page_date)
             }
         });
 
@@ -1201,7 +1201,8 @@ fn map_saved_pages(item_list: &[Page], states_hash: &HashMap<String, PageState>)
         .iter()
         .map(|i| match states_hash.get(&i.id) {
             Some(PageState::Saved) => {
-                format!("✓ {}", i.get_name())
+                // format!("✓ {}", i.get_name())
+                format!("* {}", i.get_name())
             }
             Some(PageState::NotSaved) => {
                 format!("  {}", i.get_name())
