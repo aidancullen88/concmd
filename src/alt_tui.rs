@@ -949,7 +949,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
                 let page_space = block_area.saturating_sub(DATE_LEN_PADDED + ELLIPSES_LEN);
                 let mut truncated_page = page_name.clone();
                 truncated_page.truncate(usize::from(page_space));
-                format!("{}...{}", truncated_page, page_date, page_name_len, page_space)
+                format!("{}...{}", truncated_page, page_date)
             } else {
                 let padding = " ".repeat(usize::from(space));
                 format!("{}{}{}", page_name, padding, page_date)
