@@ -296,7 +296,7 @@ fn main() {
             _ => panic!("Invalid option combination from clap"),
         },
         Action::Purge => match actions::delete_local_files(&config) {
-            Ok(()) => {}
+            Ok(()) => println!("Local pages purged"),
             Err(e) => print_generic_error(e),
         },
     }
