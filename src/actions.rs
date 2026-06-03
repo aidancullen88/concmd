@@ -207,22 +207,6 @@ pub fn delete_local_files(config: &Config) -> Result<()> {
     Ok(())
 }
 
-#[cfg(target_family = "windows")]
-pub fn open_page_in_browser(url: &str, browser: &str) -> Result<()> {
-    let mut cmd = Command::new("start");
-    cmd.args([browser, url]);
-    cmd.spawn()?;
-    Ok(())
-}
-
-#[cfg(target_family = "unix")]
-pub fn open_page_in_browser(url: &str, browser: &str) -> Result<()> {
-    let mut cmd = Command::new(browser);
-    cmd.arg(url);
-    cmd.spawn()?;
-    Ok(())
-}
-
 // Worker functions
 
 fn save_and_edit_page(config: &Config, page: &Page) -> Result<PathBuf> {

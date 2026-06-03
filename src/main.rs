@@ -63,11 +63,11 @@ enum Action {
         id: String,
     },
     /// Lists spaces, pages within a space, or pages with the same title across spaces
-    #[clap(group(ArgGroup::new("list_mode").required(true).args(&["pages", "spaces"])))]
+    #[clap(group(ArgGroup::new("list_mode").required(true).multiple(false).args(&["pages", "spaces"])))]
     List {
         #[arg(long)]
         pages: bool,
-        #[arg(short, long, requires = "pages")]
+        #[arg(short, long, requires = "pages", conflicts_with = "spaces")]
         title: Option<String>,
         #[arg(long)]
         spaces: bool,
@@ -99,7 +99,6 @@ struct Config {
     auto_sync: Option<bool>,
     api: Api,
     editor: Option<Editor>,
-    browser: Option<String>,
 }
 
 #[cfg(target_family = "windows")]
@@ -110,7 +109,6 @@ struct Config {
     auto_sync: Option<bool>,
     api: Api,
     editor: Option<Editor>,
-    browser: Option<String>,
 }
 
 impl Config {

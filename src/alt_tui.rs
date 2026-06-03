@@ -452,7 +452,6 @@ enum Message {
     CancelTitle,
     ShowUrl,
     CloseUrl,
-    OpenBrowser,
 }
 
 // Possible states for an edited page to end up in
@@ -583,7 +582,6 @@ fn handle_key_event(key_event: KeyCode, current_area: &CurrentArea) -> Option<Me
             KeyCode::Char('o') => Some(Message::StartSort),
             KeyCode::Char('t') => Some(Message::UpdateTitle),
             KeyCode::Char('u') => Some(Message::ShowUrl),
-            KeyCode::Char('b') => Some(Message::OpenBrowser),
             _ => None,
         },
         CurrentArea::SavePopup => match key_event {
@@ -851,15 +849,6 @@ fn update(
             app.current_area = CurrentArea::Pages;
             stdout().execute(EnableMouseCapture)?;
         }
-        Message::OpenBrowser => {
-            if let Some(current_page) = app.get_selected_page() {
-                actions::open_page_in_browser(
-                    current_page.get_page_url(),
-                    config.browser.as_ref().expect("No browser set in config"),
-                )?;
-                // TODO: figure out if detailed error for no browser or just fail silently or crash
-            }
-        }
     }
     Ok(None)
 }
@@ -871,7 +860,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
         match &app.current_area {
             CurrentArea::Spaces => Line::from("[r]efresh spaces | [q]uit | ? to close help "),
             CurrentArea::Pages => Line::from(
-                "[r]efresh pages (clear search) | [n]ew page | [d]elete page | update [t]itle | [s]earch pages | [o]rder by | toggle [p]review | open in [b]rowser | [q]uit | ? to close help ",
+                "[r]efresh pages (clear search) | [n]ew page | [d]elete page | update [t]itle | [s]earch pages | [o]rder by | toggle [p]review | [q]uit | ? to close help ",
             ),
             CurrentArea::SavePopup => Line::from("[q]uit (without saving) "),
             CurrentArea::SortPopup => Line::from("toggle [d]irection "),
