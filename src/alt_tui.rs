@@ -671,10 +671,14 @@ fn update(
         Message::OpenEditor => {
             if let Some(mut page) = app.get_selected_page() {
                 app.clear_page_saved_state(&page.id);
-                let edited_file_path = run_editor(terminal, config, &mut page)?;
+                let (edited_file_path, should_ask_save) = run_editor(terminal, config, &mut page)?;
                 // Save the edited file path to use if the user wants to save
                 app.edited_file_path = Some(edited_file_path);
-                app.current_area = CurrentArea::SavePopup;
+                if should_ask_save {
+                    app.current_area = CurrentArea::SavePopup;
+                } else {
+                    app.current_area = CurrentArea::Pages;
+                }
             }
         }
         Message::ConfirmSave => {
@@ -981,7 +985,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
             // If there's a page selected, render a short preview of the content to the right if the
             // app is set to show previews
             if app.show_preview {
-                let preview_text = actions::get_page_preview(&selected_page, 3500)
+                let preview_text = actions::get_page_preview(&selected_page, 6_000)
                     .expect("should always be able to preview the page");
 
                 let title = Line::from("Preview".bold());
@@ -1167,16 +1171,16 @@ fn get_rect_bounds(layout: &Rect) -> Bounds {
 
 // Pass terminal control to the editor correctly and then take it back once it exits
 // Note that mouse capture must also be turned off and on here to work correctly
-fn run_editor(terminal: &mut DefaultTerminal, config: &Config, page: &mut Page) -> Result<PathBuf> {
+fn run_editor(terminal: &mut DefaultTerminal, config: &Config, page: &mut Page) -> Result<(PathBuf, bool)> {
     stdout().execute(LeaveAlternateScreen)?;
     stdout().execute(DisableMouseCapture)?;
     disable_raw_mode()?;
-    let file_path = actions::edit_page(config, page)?;
+    let (file_path, should_ask_save) = actions::edit_page(config, page)?;
     stdout().execute(EnterAlternateScreen)?;
     enable_raw_mode()?;
     terminal.clear()?;
     stdout().execute(EnableMouseCapture)?;
-    Ok(file_path)
+    Ok((file_path, should_ask_save))
 }
 
 // Anything that implements HasAttr has ID and name, and so can be turned into a list of names

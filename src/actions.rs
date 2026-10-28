@@ -32,7 +32,7 @@ pub fn load_page_list_select_space(api: &Api) -> Result<Vec<Page>> {
 pub fn edit_id(config: &Config, id: &str) -> Result<()> {
     // full workflow for page edit: pulls page, opens nvim, pushes page
     let mut page = Page::get_page_by_id(&config.api, id)?;
-    let file_path = edit_page(config, &page)?;
+    let (file_path, should_ask_save) = edit_page(config, &page)?;
 
     match config.auto_sync {
         Some(true) => {
@@ -40,7 +40,7 @@ pub fn edit_id(config: &Config, id: &str) -> Result<()> {
             upload_page(&config.api, &mut page, Some(&file_path), UploadType::Update)?;
         }
         // Ask the user if they want to sync the page or not
-        Some(false) | None => {
+        Some(false) | None if should_ask_save == true => {
             let user_input = get_user_input(Some("Publish page: y/n?: "))?;
             match user_input.as_str() {
                 "y" | "Y" | "yes" | "Yes" => {
@@ -50,16 +50,17 @@ pub fn edit_id(config: &Config, id: &str) -> Result<()> {
                 _ => bail!("USER_CANCEL"),
             }
         }
+        Some(false) | None => {}
     };
     Ok(())
 }
 
 // Shortened workflow for TUI that does not handle upload
-pub fn edit_page(config: &Config, page: &Page) -> Result<PathBuf> {
-    let file_path = save_and_edit_page(config, page)?;
+pub fn edit_page(config: &Config, page: &Page) -> Result<(PathBuf, bool)> {
+    let (file_path, should_ask_save) = save_and_edit_page(config, page)?;
     // Save the edited file for use with --edit last
     update_edited_history(config, &page.id)?;
-    Ok(file_path)
+    Ok((file_path, should_ask_save))
 }
 
 pub fn edit_last_page(config: &Config) -> Result<()> {
@@ -81,7 +82,7 @@ pub fn cli_new_page(
     println!("Page Uploading...");
     let mut uploaded_page = create_new_page(config, &user_space, title, page_path)?;
     if *should_edit {
-        let file_path = save_and_edit_page(config, &uploaded_page)?;
+        let (file_path, _) = save_and_edit_page(config, &uploaded_page)?;
         upload_page(
             &config.api,
             &mut uploaded_page,
@@ -209,13 +210,27 @@ pub fn delete_local_files(config: &Config) -> Result<()> {
 
 // Worker functions
 
-fn save_and_edit_page(config: &Config, page: &Page) -> Result<PathBuf> {
-    let file_path = save_page_to_file(&config.save_location, &page.id, page.get_body())?;
+fn save_and_edit_page(config: &Config, page: &Page) -> Result<(PathBuf, bool)> {
+    // NOTE: none of this first_touch stuff works as vim touches the file when opened regardless
+    // Actually seems to be working now?
+    let (file_path, first_touch) = save_page_to_file(&config.save_location, &page.id, page.get_body())?;
     open_editor(&file_path, config.editor.as_ref())?;
-    Ok(file_path)
+    // let last_touch = get_file_last_touch(&file_path)?;
+    // eprintln!("first: {:?}", first_touch);
+    // eprintln!("last: {:?}", last_touch);
+    let should_ask_save = if first_touch.eq(&get_file_last_touch(&file_path)?) {
+        false
+    } else {
+        true
+    };
+    Ok((file_path, should_ask_save))
 }
 
-fn save_page_to_file(location: &Path, id: &str, body: &str) -> Result<PathBuf> {
+fn get_file_last_touch(file_path: &Path) -> Result<std::time::SystemTime> {
+    Ok(std::fs::metadata(file_path)?.modified()?)
+}
+
+fn save_page_to_file(location: &Path, id: &str, body: &str) -> Result<(PathBuf, std::time::SystemTime)> {
     let converted_body = convert_html_to_md(body)?;
     let mut file_path = location.to_path_buf();
     let dir_path = file_path.clone();
@@ -231,7 +246,8 @@ fn save_page_to_file(location: &Path, id: &str, body: &str) -> Result<PathBuf> {
         Err(e) => bail!("File creation failed with error {}", e),
     };
     file.write_all(converted_body.as_bytes())?;
-    Ok(file_path)
+    let first_touch = get_file_last_touch(&file_path)?;
+    Ok((file_path, first_touch))
 }
 
 fn update_edited_history(config: &Config, id: &str) -> Result<()> {
