@@ -149,7 +149,7 @@ impl Page {
             RequestType::Put(serialised_body),
             format!(
                 "https://{}/wiki/api/v2/pages/{}",
-                api.confluence_domain, &self.id
+                api.confluence_domain, self.id
             ),
         )?;
         match resp.status().as_u16() {
@@ -176,7 +176,7 @@ impl Page {
             RequestType::Put(body),
             format!(
                 "https://{}/wiki/api/v2/pages/{}/title",
-                api.confluence_domain, &self.id
+                api.confluence_domain, self.id
             ),
         )?;
         match resp.status().as_u16() {
@@ -215,7 +215,7 @@ impl Page {
             RequestType::Del,
             format!(
                 "https://{}/wiki/api/v2/pages/{}",
-                api.confluence_domain, &self.id
+                api.confluence_domain, self.id
             ),
         )?;
         match resp.status().as_u16() {

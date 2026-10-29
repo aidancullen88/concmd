@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::Editor;
+use crate::{Editor, PageRef};
 use crate::conf_api::{Page, Space};
 use crate::{Api, Config};
 
@@ -29,9 +29,10 @@ pub fn load_page_list_select_space(api: &Api) -> Result<Vec<Page>> {
     load_page_list_for_space(api, &selected_space.id)
 }
 
-pub fn edit_id(config: &Config, id: &str) -> Result<()> {
+pub fn edit(config: &Config, page: &PageRef) -> Result<()> {
+    let page_id = resolve_id(config, page)?;
     // full workflow for page edit: pulls page, opens nvim, pushes page
-    let mut page = Page::get_page_by_id(&config.api, id)?;
+    let mut page = Page::get_page_by_id(&config.api, &page_id)?;
     let (file_path, should_ask_save) = edit_page(config, &page)?;
 
     match config.auto_sync {
@@ -40,7 +41,7 @@ pub fn edit_id(config: &Config, id: &str) -> Result<()> {
             upload_page(&config.api, &mut page, Some(&file_path), UploadType::Update)?;
         }
         // Ask the user if they want to sync the page or not
-        Some(false) | None if should_ask_save == true => {
+        Some(false) | None if should_ask_save => {
             let user_input = get_user_input(Some("Publish page: y/n?: "))?;
             match user_input.as_str() {
                 "y" | "Y" | "yes" | "Yes" => {
@@ -61,14 +62,6 @@ pub fn edit_page(config: &Config, page: &Page) -> Result<(PathBuf, bool)> {
     // Save the edited file for use with --edit last
     update_edited_history(config, &page.id)?;
     Ok((file_path, should_ask_save))
-}
-
-pub fn edit_last_page(config: &Config) -> Result<()> {
-    let history_id = match get_history_id(config)? {
-        Some(history_id) => history_id,
-        None => bail!("Attempted to edit last page with no history record"),
-    };
-    edit_id(config, &history_id)
 }
 
 pub fn cli_new_page(
@@ -146,16 +139,12 @@ pub fn get_page_preview(page: &Page, preview_length: usize) -> Result<String> {
     convert_html_to_md(&body.chars().take(preview_length).collect::<String>())
 }
 
-// Get a preview of the page for cli --last -p
-pub fn get_last_page_preview(config: &Config, preview_length: usize) -> Result<String> {
-    let page = get_last_page(config)?;
-    get_page_preview(&page, preview_length)
-}
-
 // Get a preview of the page for cli -i -p
-pub fn get_page_preview_by_id(config: &Config, id: &str, preview_length: usize) -> Result<String> {
-    let page = get_page_by_id(&config.api, id)?;
-    get_page_preview(&page, preview_length)
+pub fn render_page_preview(config: &Config, page: &PageRef, preview_length: usize) -> Result<()> {
+    let page_id = resolve_id(config, page)?;
+    let page = get_page_by_id(&config.api, &page_id)?;
+    println!("{}", get_page_preview(&page, preview_length)?);
+    Ok(())
 }
 
 pub fn get_page_by_id(api: &Api, id: &str) -> Result<Page> {
@@ -218,21 +207,27 @@ fn save_and_edit_page(config: &Config, page: &Page) -> Result<(PathBuf, bool)> {
     // let last_touch = get_file_last_touch(&file_path)?;
     // eprintln!("first: {:?}", first_touch);
     // eprintln!("last: {:?}", last_touch);
-    let should_ask_save = if first_touch.eq(&get_file_last_touch(&file_path)?) {
-        false
-    } else {
-        true
-    };
+    let should_ask_save = !first_touch.eq(&get_file_last_touch(&file_path)?);
     Ok((file_path, should_ask_save))
+}
+
+fn resolve_id(config: &Config, page: &PageRef) -> Result<String> {
+    match page {
+        PageRef::Id(id) => Ok(id.clone()),
+        PageRef::Last => match get_history_id(config)? {
+            Some(history_id) => Ok(history_id),
+            None => bail!("No last edited page found")
+        }
+    }
 }
 
 fn get_file_last_touch(file_path: &Path) -> Result<std::time::SystemTime> {
     Ok(std::fs::metadata(file_path)?.modified()?)
 }
 
-fn save_page_to_file(location: &Path, id: &str, body: &str) -> Result<(PathBuf, std::time::SystemTime)> {
+fn save_page_to_file(save_location: &Path, id: &str, body: &str) -> Result<(PathBuf, std::time::SystemTime)> {
     let converted_body = convert_html_to_md(body)?;
-    let mut file_path = location.to_path_buf();
+    let mut file_path = save_location.to_path_buf();
     let dir_path = file_path.clone();
     file_path.push(id);
     file_path.set_extension("md");
@@ -356,14 +351,6 @@ fn get_history_path_or_default(config: &Config) -> Result<PathBuf> {
     Ok(full_history_path)
 }
 
-fn get_last_page(config: &Config) -> Result<Page> {
-    let history_id = match get_history_id(config)? {
-        Some(history_id) => history_id,
-        None => bail!("Attemped to get history when none present"),
-    };
-    get_page_by_id(&config.api, &history_id)
-}
-
 fn get_history_id(config: &Config) -> Result<Option<String>> {
     let history_path = get_history_path_or_default(config)?;
     let history_string = String::from_utf8(std::fs::read(history_path)?)?;
@@ -385,9 +372,9 @@ fn user_choose_space(mut space_list: Vec<Space>) -> Result<Space> {
         println!(
             "{}: {}, ID: {}, Key: {}",
             i + 1,
-            &space.name,
-            &space.id,
-            &space.key
+            space.name,
+            space.id,
+            space.key
         );
     }
     let max_selection = space_list.len() + 1;

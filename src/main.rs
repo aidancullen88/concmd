@@ -9,12 +9,13 @@ use serde::Deserialize;
 use serde::{Deserializer, de::Error};
 
 use std::fs::File;
+use std::process::ExitCode;
 use std::{
     io::Read,
     path::{Path, PathBuf},
 };
 
-use clap::{ArgGroup, Parser};
+use clap::Parser;
 
 use crate::conf_api::HasAttr;
 
@@ -28,22 +29,21 @@ struct Args {
 
 #[derive(Debug, clap::Subcommand)]
 enum Action {
-    /// Opens a page to be edited given the ID. Can also open the last edited page or preview the
-    /// page
-    #[clap(group(ArgGroup::new("edit_mode").required(true).args(&["id", "last"])))]
-    Edit {
-        /// Re-open the last page to be edited
-        #[arg(long)]
-        last: bool,
-        /// ID of the page to edit: cannot be used with --last
-        #[arg(short, long)]
-        id: Option<String>,
-        /// Print n bytes of the content as a preview of the page rather than editing
-        #[arg(short, long)]
-        preview: Option<u16>,
-    },
-    /// Opens the TUI interface
+    /// Opens the terminal interface
     View,
+    /// Opens a page to be edited, using either the id or getting the last page
+    Edit {
+        #[command(flatten)]
+        target: PageTarget,
+    },
+    /// Print n bytes of the content as a preview of the page rather than editing
+    Preview {
+        #[command(flatten)]
+        target: PageTarget,
+        /// Number of bytes to print
+        #[arg(short, long, default_value_t = 1000)]
+        bytes: usize,
+    },
     /// Create a new page, either from an existing file or from scratch
     New {
         /// Use an existing file to create the new page
@@ -59,31 +59,57 @@ enum Action {
     /// Deletes a page given its ID
     Delete {
         /// ID of the page to delete
-        #[arg(long, short)]
         id: String,
     },
     /// Lists spaces, pages within a space, or pages with the same title across spaces
-    #[clap(group(ArgGroup::new("list_mode").required(true).multiple(false).args(&["pages", "spaces"])))]
     List {
-        #[arg(long)]
-        pages: bool,
-        #[arg(short, long, requires = "pages", conflicts_with = "spaces")]
-        title: Option<String>,
-        #[arg(long)]
-        spaces: bool,
+        #[command(subcommand)]
+        list: ListCmd,
     },
     /// Convert stdin input md <-> html
-    #[clap(group(ArgGroup::new("convert_mode").required(true).args(&["md", "html"])))]
     Convert {
-        /// Convert stdin input from md to html
         #[arg(long)]
-        md: bool,
-        /// Convert stdin input from html to md
-        #[arg(long)]
-        html: bool,
+        from: Format,
     },
     /// Deletes all local copies of pages
     Purge,
+}
+
+#[derive(Debug, clap::Subcommand)]
+enum ListCmd {
+    Spaces,
+    Pages {
+        #[arg(short, long)]
+        title: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, clap::ValueEnum)]
+enum Format {
+    /// Convert stdin input from md to html
+    Md,
+    /// Convert stdin input from html to md
+    Html,
+}
+
+#[derive(Debug, clap::Args)]
+#[group(required = true, multiple = false)]
+struct PageTarget {
+    #[arg(long)]
+    last: bool,
+    #[arg(short, long)]
+    id: Option<String>,
+}
+
+impl From<PageTarget> for PageRef {
+    fn from(value: PageTarget) -> Self {
+        value.id.map_or(PageRef::Last, PageRef::Id)
+    }
+}
+
+enum PageRef {
+    Last,
+    Id(String),
 }
 
 // Config structure. Note deserialize_with for save_location, see fn
@@ -161,142 +187,60 @@ where
     Ok(None)
 }
 
-fn main() {
-    let config = match get_config() {
-        Ok(c) => c,
-        Err(e) => {
-            println!("ERROR: Error fetching config: {}", e);
-            return;
-        }
-    };
-
+fn main() -> std::process::ExitCode {
     let cli = Args::parse();
+    match run(cli) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("{}", e);
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn run(cli: Args) -> Result<()> {
+    let config = get_config()?;
 
     match cli.action {
-        Action::Edit { id, last, preview } => {
-            let result =
-                match (last, id, preview) {
-                    // Edit the last edited page
-                    (true, None, None) => actions::edit_last_page(&config)
-                        .map(|_| println!("Page edited successfully!")),
-                    // Edit page with given ID
-                    (false, Some(id), None) => actions::edit_id(&config, &id)
-                        .map(|_| println!("Page edited successfully!")),
-                    // Show the preview for the last edited page
-                    (true, None, Some(preview)) => {
-                        actions::get_last_page_preview(&config, preview as usize)
-                            .map(|s| println!("{}", s))
-                    }
-                    // Show the preview for the given ID
-                    (false, Some(id), Some(preview)) => {
-                        actions::get_page_preview_by_id(&config, &id, preview as usize)
-                            .map(|s| println!("{}", s))
-                    }
-                    _ => panic!("Unsupported CLI arguments set"),
-                };
-
-            if let Err(e) = result {
-                if e.to_string() == "USER_CANCEL" {
-                    println!("Exited without syncing changes")
-                } else {
-                    print_generic_error(e)
+        Action::Edit { target } => actions::edit(&config, &target.into()),
+        Action::View => alt_tui::display(&config),
+        Action::New { path, title, edit } => actions::cli_new_page(
+            &config,
+            &edit,
+            title.clone(),
+            path.map(get_path).transpose()?.as_deref(),
+        )
+        .inspect(|_| println!("Page {} created successfully", title)),
+        Action::Delete { id } => actions::delete_page_by_id(&config.api, &id)
+            .inspect(|_| println!("Page deleted successfully")),
+        Action::List { list } => match list {
+            ListCmd::Spaces => {
+                render_name_id_list(&actions::load_space_list(&config.api)?);
+                Ok(())
+            }
+            ListCmd::Pages { title } => match title {
+                Some(title) => actions::list_page_by_title(&config.api, &title),
+                None => {
+                    render_name_id_list(&actions::load_page_list_select_space(&config.api)?);
+                    Ok(())
                 }
-            }
+            },
+        },
+        Action::Preview { target, bytes } => {
+            actions::render_page_preview(&config, &target.into(), bytes)
         }
-        Action::View => match alt_tui::display(&config) {
-            Ok(_) => {}
-            Err(e) if e.to_string() == "USER_APP_EXIT" => {
-                println!("Exited without selecting a page")
+        Action::Convert { from } => match from {
+            Format::Md => {
+                println!("{}", actions::convert_md_string_html()?);
+                Ok(())
             }
-            Err(e) => print_generic_error(e),
-        },
-        Action::New { path, title, edit } => {
-            let result = if let Some(path) = path {
-                #[cfg(target_family = "unix")]
-                let expanded_path = match expanduser::expanduser(path) {
-                    Ok(ex_path) => ex_path,
-                    Err(_) => {
-                        println!("The provided path is not valid");
-                        return;
-                    }
-                };
-                #[cfg(target_family = "windows")]
-                let expanded_path = PathBuf::from(path);
-
-                actions::cli_new_page(&config, &edit, title.clone(), Some(&expanded_path))
-                    .map(|_| println!("Page created successfully!"))
-            } else {
-                actions::cli_new_page(
-                    &config,
-                    &edit,
-                    title.clone(),
-                    path.map(PathBuf::from).as_deref(),
-                )
-                .map(|_| println!("Page created successfully!"))
-            };
-
-            if let Err(e) = result {
-                if e.to_string() == "USER_CANCEL" {
-                    println!("Exited without saving changes");
-                } else if e.to_string().starts_with("A page with this title") {
-                    eprintln!(
-                        "ERROR: A page with title \"{}\" already exists in this space",
-                        title
-                    )
-                } else {
-                    print_generic_error(e);
-                }
+            Format::Html => {
+                println!("{}", actions::convert_html_string_md()?);
+                Ok(())
             }
-        }
-        Action::Delete { id } => match actions::delete_page_by_id(&config.api, &id) {
-            Ok(()) => println!("Page deleted successfullly"),
-            Err(e) if e.to_string() == "DELETE_UNAUTH" => {
-                eprintln!("Token is not authorised to delete this page")
-            }
-            Err(e) if e.to_string() == "NOT_FOUND" => {
-                eprintln!("Page with id {} was not found for deletion", id)
-            }
-            Err(e) => print_generic_error(e),
         },
-        Action::List {
-            pages,
-            spaces,
-            title,
-        } => match (pages, spaces, title) {
-            // Case list --spaces
-            (false, true, None) => match actions::load_space_list(&config.api) {
-                Ok(space_list) => render_name_id_list(&space_list),
-                Err(e) => print_generic_error(e),
-            },
-            // Case list --pages
-            (true, false, None) => match actions::load_page_list_select_space(&config.api) {
-                Ok(page_list) => render_name_id_list(&page_list),
-                Err(e) => print_generic_error(e),
-            },
-            // Case list --title
-            (true, false, Some(title)) => match actions::list_page_by_title(&config.api, &title) {
-                Ok(()) => {}
-                Err(e) => print_generic_error(e),
-            },
-            _ => panic!("Invalid option combination from CLI"),
-        },
-        Action::Convert { md, html } => match (md, html) {
-            // Convert md to html
-            (true, false) => match actions::convert_md_string_html() {
-                Ok(result_string) => println!("{}", result_string),
-                Err(e) => print_generic_error(e),
-            },
-            // Convert html to md
-            (false, true) => match actions::convert_html_string_md() {
-                Ok(result_string) => println!("{}", result_string),
-                Err(e) => print_generic_error(e),
-            },
-            _ => panic!("Invalid option combination from clap"),
-        },
-        Action::Purge => match actions::delete_local_files(&config) {
-            Ok(()) => println!("Local pages purged"),
-            Err(e) => print_generic_error(e),
-        },
+        Action::Purge => actions::delete_local_files(&config)
+            .inspect(|_| println!("Local pages purged successfully")),
     }
 }
 
@@ -332,6 +276,10 @@ fn render_name_id_list<A: HasAttr>(items: &[A]) {
     }
 }
 
-fn print_generic_error(e: anyhow::Error) {
-    eprintln!("ERROR: {}", e)
+fn get_path(path: String) -> Result<PathBuf> {
+    if cfg!(target_family = "unix") {
+        Ok(expanduser::expanduser(path)?)
+    } else {
+        Ok(PathBuf::from(path))
+    }
 }
